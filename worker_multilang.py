@@ -9,6 +9,11 @@ import tempfile
 import requests
 import traceback
 import json
+from dotenv import load_dotenv
+
+# Load environment variables first
+load_dotenv()
+
 from db import get_conn
 from utils import send_whatsapp
 from openai_client_multilang import transcribe_file_multilang, summarize_text_multilang
