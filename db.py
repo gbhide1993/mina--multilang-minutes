@@ -112,6 +112,12 @@ def init_db():
         # Add language preference column
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'hi';")
         
+        # Add multilang columns for production worker
+        cur.execute("ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS detected_language VARCHAR(5);")
+        cur.execute("ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS chosen_language VARCHAR(5);")
+        cur.execute("ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS job_state VARCHAR(50);")
+        cur.execute("ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS summary_generated_at TIMESTAMP;")
+        
         # Ensure reference_id and notes columns exist in payments table
         cur.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS reference_id TEXT;")
         cur.execute("ALTER TABLE payments ADD COLUMN IF NOT EXISTS notes JSONB;")
@@ -133,6 +139,21 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_payments_phone ON payments (phone)")
         # create a unique index on razorpay_payment_id to prevent duplicates
         cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_razorpay_payment_id ON payments (razorpay_payment_id)")
+        
+        # Multilang indexes
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_notes_job_state ON meeting_notes(job_state, created_at);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_notes_language_choice ON meeting_notes(phone, id, chosen_language) WHERE chosen_language IS NOT NULL;")
+        
+        # Update existing records to have proper job_state
+        cur.execute("""
+            UPDATE meeting_notes 
+            SET job_state = CASE 
+                WHEN summary IS NOT NULL AND transcript IS NOT NULL THEN 'completed'
+                WHEN transcript IS NOT NULL THEN 'transcribed'
+                ELSE 'pending'
+            END
+            WHERE job_state IS NULL
+        """)
         conn.commit()
 
 
