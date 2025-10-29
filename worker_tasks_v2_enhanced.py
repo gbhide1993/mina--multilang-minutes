@@ -302,6 +302,148 @@ def process_audio_job_v2(meeting_id, media_url):
                     conn.commit()
                     print(f"🔧 WORKER V2: ✅ Database updates committed successfully (credits_deducted={credits_deducted})")
                     
+            except Exception as db_error:
+                conn.rollback()
+                print(f"🔧 WORKER V2: ❌ Database update failed, rolled back: {db_error}")
+                traceback.print_exc()
+                raise
+        
+        # Send result
+        print(f"🔧 WORKER V2: Sending WhatsApp message to {phone}")
+        try:
+            send_whatsapp(phone, summary or "📝 Transcription completed.")
+            print(f"🔧 WORKER V2: WhatsApp message sent successfully to {phone}")
+        except Exception as send_error:
+            print(f"🔧 WORKER V2: Failed to send WhatsApp message to {phone}: {send_error}")
+            raise
+        
+        # Cleanup
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except Exception as cleanup_error:
+            print(f"🔧 WORKER V2: Failed to cleanup temp file {tmp_path}: {cleanup_error}")
+            
+        return {"success": True, "meeting_id": meeting_id}
+        
+    except Exception as e:
+        print(f"🔧 WORKER V2: Error in process_audio_job_v2 for meeting_id={meeting_id}: {e}")
+        traceback.print_exc()
+        try:
+            if 'phone' in locals():
+                print(f"🔧 WORKER V2: Sending error message to {phone}")
+                send_whatsapp(phone, "⚠️ Processing failed. Please try again.")
+                print(f"🔧 WORKER V2: Error message sent to {phone}")
+        except Exception as send_error:
+            print(f"🔧 WORKER V2: Failed to send error message: {send_error}")
+        return {"error": str(e)}
+
+def test_worker_job():
+    """Simple test function"""
+    print("🧪 TEST WORKER JOB EXECUTED SUCCESSFULLY!")
+    return "test_success"..")
+        # Use multilang summarization if available
+        try:
+            if user_language != 'en':
+                from openai_client_multilang import summarize_text_multilang
+                summary = summarize_text_multilang(transcript, user_language)
+            else:
+                summary = summarize_text(transcript, "Create comprehensive meeting minutes with clear sections: 1) Key Discussion Points 2) Important Decisions 3) Action Items with owners 4) Next Steps. Be specific and detailed. Use bullet points and clear formatting.")
+        except ImportError:
+            summary = summarize_text(transcript, "Create comprehensive meeting minutes with clear sections: 1) Key Discussion Points 2) Important Decisions 3) Action Items with owners 4) Next Steps. Be specific and detailed. Use bullet points and clear formatting.")
+        print(f"🔧 WORKER V2: Summarization complete, length: {len(summary) if summary else 0}")
+        
+        # Calculate duration
+        try:
+            from mutagen import File as MutagenFile
+            mf = MutagenFile(tmp_path)
+            
+            if mf and hasattr(mf, 'info') and hasattr(mf.info, 'length'):
+                duration_seconds = float(mf.info.length)
+                print(f"🔧 WORKER V2: Mutagen detected duration: {duration_seconds:.2f}s")
+            else:
+                duration_seconds = (len(resp.content) * 8) / 80000  # Conservative estimate
+                print(f"🔧 WORKER V2: Using file size estimation: {duration_seconds:.2f}s")
+            
+            # Cap maximum duration (30 minutes max)
+            MAX_DURATION_SECONDS = 30 * 60
+            if duration_seconds > MAX_DURATION_SECONDS:
+                print(f"🔧 WORKER V2: ⚠️ Duration capped from {duration_seconds:.2f}s to {MAX_DURATION_SECONDS}s")
+                duration_seconds = MAX_DURATION_SECONDS
+            
+            minutes = round(duration_seconds / 60.0, 2)
+            print(f"🔧 WORKER V2: Final duration: {duration_seconds:.2f}s ({minutes} minutes)")
+            
+        except Exception as duration_error:
+            duration_seconds = min(len(resp.content) / 16000, 30 * 60)
+            minutes = round(duration_seconds / 60.0, 2)
+            print(f"🔧 WORKER V2: Duration calculation failed, using estimate: {minutes} minutes ({duration_error})")
+        
+        # Update database and deduct credits atomically
+        with get_conn() as conn:
+            try:
+                with conn.cursor() as cur:
+                    # Lock user row first
+                    cur.execute(
+                        "SELECT credits_remaining, subscription_active, subscription_expiry FROM users WHERE phone=%s FOR UPDATE",
+                        (phone,)
+                    )
+                    user_row = cur.fetchone()
+                    
+                    credits_deducted = 0.0
+                    if user_row:
+                        credits = float(user_row[0] or 0.0)
+                        sub_active = bool(user_row[1])
+                        sub_expiry = user_row[2]
+                        
+                        print(f"🔧 WORKER V2: User status - Credits: {credits}, Sub active: {sub_active}, Sub expiry: {sub_expiry}")
+                        
+                        # Check subscription status
+                        from datetime import datetime, timezone
+                        now = datetime.now(timezone.utc)
+                        has_active_sub = sub_active and (sub_expiry is None or sub_expiry > now)
+                        
+                        if not has_active_sub:
+                            if minutes > 0:
+                                new_credits = max(0.0, credits - minutes)
+                                cur.execute(
+                                    "UPDATE users SET credits_remaining=%s WHERE phone=%s",
+                                    (new_credits, phone)
+                                )
+                                credits_deducted = minutes
+                                print(f"🔧 WORKER V2: Deducted {minutes} minutes. Credits: {credits} -> {new_credits}")
+                            else:
+                                print(f"🔧 WORKER V2: No credits deducted - duration is 0 minutes")
+                        else:
+                            print(f"🔧 WORKER V2: Active subscription - no credits deducted")
+                    else:
+                        print(f"🔧 WORKER V2: No user row found for phone {phone} - creating default user")
+                        cur.execute(
+                            "INSERT INTO users (phone, credits_remaining, subscription_active) VALUES (%s, %s, %s) RETURNING credits_remaining",
+                            (phone, 30.0, False)
+                        )
+                        new_user = cur.fetchone()
+                        if new_user and minutes > 0:
+                            new_credits = max(0.0, 30.0 - minutes)
+                            cur.execute(
+                                "UPDATE users SET credits_remaining=%s WHERE phone=%s",
+                                (new_credits, phone)
+                            )
+                            credits_deducted = minutes
+                            print(f"🔧 WORKER V2: Created new user and deducted {minutes} minutes. Credits: 30.0 -> {new_credits}")
+                    
+                    # Update meeting_notes
+                    cur.execute(
+                        "UPDATE meeting_notes SET transcript=%s, summary=%s WHERE id=%s",
+                        (transcript, summary, meeting_id)
+                    )
+                    affected_rows = cur.rowcount
+                    print(f"🔧 WORKER V2: Updated meeting_notes for meeting_id={meeting_id}, affected_rows={affected_rows}")
+                    
+                    # Commit both updates together
+                    conn.commit()
+                    print(f"🔧 WORKER V2: ✅ Database updates committed successfully (credits_deducted={credits_deducted})")
+                    
                     # Verify the update worked
                     cur.execute("SELECT transcript IS NOT NULL, summary IS NOT NULL FROM meeting_notes WHERE id=%s", (meeting_id,))
                     verify_row = cur.fetchone()
