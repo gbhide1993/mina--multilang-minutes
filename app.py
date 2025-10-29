@@ -420,7 +420,7 @@ def twilio_webhook():
         try:
             if queue:
                 job = queue.enqueue(
-                    "worker_tasks_v2_enhanced.process_audio_job_v2",
+                    "worker_multilang.process_audio_job_multilang",
                     meeting_id,
                     media_url,
                     job_timeout=60 * 60,
