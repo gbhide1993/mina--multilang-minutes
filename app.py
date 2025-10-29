@@ -275,49 +275,70 @@ def twilio_webhook():
         # Handle text messages for language selection
         body_text = (request.values.get("Body") or request.form.get("Body") or "").strip()
         if not media_url:
-            # Language menu request
-            if body_text.lower() in ['language', 'lang', 'settings', 'भाषा', 'ভাষা']:
-                menu = get_language_menu()
-                send_whatsapp(sender, menu)
+            # Check if user has pending summary job first
+            pending_job = _get_pending_summary_job(sender)
+            
+            # Language choice for pending summary
+            lang_choice = parse_language_choice(body_text)
+            if lang_choice and pending_job:
+                # Complete pending summary with selected language
+                try:
+                    # Enqueue completion job
+                    if queue:
+                        job = queue.enqueue(
+                            "worker_multilang.complete_summary_job",
+                            pending_job['meeting_id'],
+                            lang_choice,
+                            job_timeout=60 * 60
+                        )
+                        if job:
+                            lang_name = get_language_name(lang_choice)
+                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
+                            debug_print(f"✅ Enqueued summary completion for meeting {pending_job['meeting_id']} in {lang_name}")
+                        else:
+                            send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
+                    else:
+                        send_whatsapp(sender, "⚠️ Service unavailable. Please try again later.")
+                except Exception as e:
+                    debug_print(f"Error enqueuing summary completion: {e}")
+                    send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
                 return ("", 204)
             
-            # Language choice - could be preference setting OR summary language selection
-            lang_choice = parse_language_choice(body_text)
-            if lang_choice:
-                # Check if user has pending summary job
-                pending_job = _get_pending_summary_job(sender)
+            # Language menu request
+            if body_text.lower() in ['language', 'lang', 'settings', 'भाषा', 'ভাষা']:
                 if pending_job:
-                    # Complete pending summary with selected language
-                    from worker_multilang import complete_summary_job
-                    try:
-                        result = complete_summary_job(pending_job['meeting_id'], lang_choice)
-                        if result.get('success'):
-                            lang_name = get_language_name(lang_choice)
-                            debug_print(f"✅ Completed summary for meeting {pending_job['meeting_id']} in {lang_name}")
-                        else:
-                            send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
-                    except Exception as e:
-                        debug_print(f"Error completing summary: {e}")
-                        send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
-                    return ("", 204)
+                    # Show language menu for pending summary
+                    detected_lang = pending_job.get('detected_language', 'en')
+                    detected_name = get_language_name(detected_lang)
+                    menu = get_language_menu()
+                    send_whatsapp(sender, f"🎙️ *Audio transcribed!*\n🔍 Detected: *{detected_name}*\n\n{menu}")
                 else:
-                    # Set user language preference
-                    set_user_language(sender, lang_choice)
-                    lang_name = get_language_name(lang_choice)
-                    send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
-                    return ("", 204)
+                    # Show regular language menu
+                    menu = get_language_menu()
+                    send_whatsapp(sender, menu)
+                return ("", 204)
+            
+            # Set user language preference (when no pending job)
+            if lang_choice and not pending_job:
+                set_user_language(sender, lang_choice)
+                lang_name = get_language_name(lang_choice)
+                send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
+                return ("", 204)
             
             # Default guidance message
-            try:
-                current_lang = get_user_language(sender)
-                lang_name = get_language_name(current_lang)
+            if pending_job:
+                # Remind user to select language for pending summary
+                detected_lang = pending_job.get('detected_language', 'en')
+                detected_name = get_language_name(detected_lang)
+                menu = get_language_menu()
+                send_whatsapp(sender, f"⏳ *Waiting for your choice*\n🔍 Detected: *{detected_name}*\n\n{menu}")
+            else:
+                # Regular guidance
                 send_whatsapp(sender, (
-                    f"Hi 👋 — I can transcribe voice messages in {lang_name}.\n\n"
-                    "🎙️ Send a voice note for meeting minutes\n"
-                    "🌐 Type 'language' to change language"
+                    "Hi 👋 — Send a voice message and I'll create meeting minutes!\n\n"
+                    "🎙️ Send voice note → Choose summary language → Get results\n"
+                    "🌐 Type 'language' to see supported languages"
                 ))
-            except Exception as e:
-                debug_print("Failed to send guidance reply:", e)
             return ("", 204)
 
         # Download media to local file
