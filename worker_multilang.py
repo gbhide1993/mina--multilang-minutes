@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-Multi-language Worker - 2-Step Flow
-1. Transcribe audio + detect language + ask user for summary language
-2. Generate summary in user's chosen language
+Multi-language Worker - Continuous Flow
+Transcribe audio, wait for language selection, then generate summary
 """
 
 import os
@@ -10,6 +9,7 @@ import tempfile
 import requests
 import traceback
 import json
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -17,7 +17,7 @@ load_dotenv()
 from db import get_conn
 from utils import send_whatsapp
 from openai_client_multilang import transcribe_file_multilang, summarize_text_multilang
-from language_handler_v2 import get_language_menu, get_language_name
+from language_handler_v2 import get_language_menu, get_language_name, parse_language_choice
 
 def _detect_language_from_transcript(transcript):
     """Detect language from transcript text"""
@@ -56,9 +56,46 @@ def _detect_language_from_transcript(transcript):
     
     return 'hi'  # Default to Hindi
 
+def _wait_for_language_selection(phone, meeting_id, timeout=60):
+    """Wait for user to select language, return chosen language or None if timeout"""
+    print(f"🌐 WORKER: Waiting for language selection from {phone} for meeting {meeting_id}")
+    
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            # Check for new messages from this user
+            with get_conn() as conn, conn.cursor() as cur:
+                # Look for recent messages that might contain language choice
+                cur.execute("""
+                    SELECT summary FROM meeting_notes 
+                    WHERE phone=%s AND id=%s
+                """, (phone, meeting_id))
+                row = cur.fetchone()
+                
+                if row:
+                    summary_data = row[0] if hasattr(row, '__getitem__') else row.summary
+                    try:
+                        job_data = json.loads(summary_data)
+                        if job_data.get('chosen_language'):
+                            chosen_lang = job_data['chosen_language']
+                            print(f"🌐 WORKER: Language selected: {chosen_lang}")
+                            return chosen_lang
+                    except:
+                        pass
+            
+            time.sleep(2)  # Check every 2 seconds
+            
+        except Exception as e:
+            print(f"🌐 WORKER: Error checking for language selection: {e}")
+            time.sleep(2)
+    
+    print(f"🌐 WORKER: Timeout waiting for language selection from {phone}")
+    return None
+
 def process_audio_job_multilang(meeting_id, media_url):
-    """Step 1: Transcribe audio, detect language, ask user for summary language"""
-    print(f"🌐 MULTILANG WORKER: Starting process_audio_job_multilang for meeting_id={meeting_id}")
+    """Complete flow: Transcribe → Wait for language selection → Generate summary"""
+    print(f"🌐 MULTILANG WORKER: Starting complete flow for meeting_id={meeting_id}")
+    
     try:
         # Get meeting details
         with get_conn() as conn, conn.cursor() as cur:
@@ -70,7 +107,7 @@ def process_audio_job_multilang(meeting_id, media_url):
             phone = row[0] if hasattr(row, '__getitem__') else row.phone
             audio_url = media_url or (row[1] if hasattr(row, '__getitem__') else row.audio_file)
         
-        # Download audio
+        # Download and transcribe audio
         auth = None
         twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
         twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
@@ -98,19 +135,14 @@ def process_audio_job_multilang(meeting_id, media_url):
             tmp.write(resp.content)
             tmp_path = tmp.name
         
-        # Transcribe with auto-detection
+        # Transcribe
         print(f"🌐 MULTILANG WORKER: Starting transcription...")
-        try:
-            transcript = transcribe_file_multilang(tmp_path, language=None)  # Auto-detect
-            print(f"🌐 MULTILANG WORKER: Transcription complete, length: {len(transcript) if transcript else 0}")
-            
-            # Detect language from transcript
-            detected_language = _detect_language_from_transcript(transcript)
-            print(f"🌐 MULTILANG WORKER: Detected language: {detected_language}")
-            
-        except Exception as transcribe_error:
-            print(f"🌐 MULTILANG WORKER: Transcription failed: {transcribe_error}")
-            raise
+        transcript = transcribe_file_multilang(tmp_path, language=None)
+        print(f"🌐 MULTILANG WORKER: Transcription complete, length: {len(transcript) if transcript else 0}")
+        
+        # Detect language
+        detected_language = _detect_language_from_transcript(transcript)
+        print(f"🌐 MULTILANG WORKER: Detected language: {detected_language}")
         
         # Calculate duration for credits
         try:
@@ -124,7 +156,7 @@ def process_audio_job_multilang(meeting_id, media_url):
         except:
             minutes = 1.0
         
-        # Store pending job data in database
+        # Store transcript and mark as awaiting language selection
         pending_job_data = {
             'meeting_id': meeting_id,
             'phone': phone,
@@ -134,10 +166,8 @@ def process_audio_job_multilang(meeting_id, media_url):
             'status': 'awaiting_language_selection'
         }
         
-        # Update database with transcript and pending job data
         with get_conn() as conn:
             with conn.cursor() as cur:
-                # Store transcript and pending job info
                 cur.execute("""
                     UPDATE meeting_notes 
                     SET transcript=%s, summary=%s 
@@ -153,7 +183,7 @@ def process_audio_job_multilang(meeting_id, media_url):
                 
                 conn.commit()
         
-        # Send language selection menu to user
+        # Send language selection menu
         detected_lang_name = get_language_name(detected_language)
         menu = get_language_menu()
         
@@ -165,47 +195,13 @@ def process_audio_job_multilang(meeting_id, media_url):
         send_whatsapp(phone, smart_menu)
         print(f"🌐 MULTILANG WORKER: Language selection menu sent to {phone}")
         
-        # Cleanup
-        try:
-            if tmp_path and os.path.exists(tmp_path):
-                os.remove(tmp_path)
-        except:
-            pass
+        # Wait for language selection (60 seconds)
+        chosen_language = _wait_for_language_selection(phone, meeting_id, timeout=60)
         
-        return {"success": True, "status": "awaiting_language_selection", "meeting_id": meeting_id}
-        
-    except Exception as e:
-        print(f"🌐 MULTILANG WORKER: Error: {e}")
-        traceback.print_exc()
-        try:
-            if 'phone' in locals():
-                send_whatsapp(phone, "⚠️ Processing failed. Please try again.")
-        except:
-            pass
-        return {"error": str(e)}
-
-def complete_summary_job(meeting_id, chosen_language):
-    """Step 2: Generate summary in user's chosen language"""
-    print(f"🌐 MULTILANG WORKER: Completing summary for meeting_id={meeting_id} in language={chosen_language}")
-    try:
-        # Get pending job data
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT phone, transcript, summary FROM meeting_notes WHERE id=%s", (meeting_id,))
-            row = cur.fetchone()
-            if not row:
-                return {"error": "Meeting not found"}
-            
-            phone = row[0] if hasattr(row, '__getitem__') else row.phone
-            transcript = row[1] if hasattr(row, '__getitem__') else row.transcript
-            summary_json = row[2] if hasattr(row, '__getitem__') else row.summary
-            
-            # Parse pending job data
-            try:
-                job_data = json.loads(summary_json)
-                if job_data.get('status') != 'awaiting_language_selection':
-                    return {"error": "No pending job found"}
-            except:
-                return {"error": "Invalid job data"}
+        if not chosen_language:
+            # Timeout - default to English
+            chosen_language = 'en'
+            send_whatsapp(phone, "⏰ No response received. Generating summary in English...")
         
         # Generate summary in chosen language
         print(f"🌐 MULTILANG WORKER: Generating summary in {chosen_language}...")
@@ -229,14 +225,21 @@ def complete_summary_job(meeting_id, chosen_language):
         
         print(f"🌐 MULTILANG WORKER: Summary sent to {phone} in {lang_name}")
         
+        # Cleanup
+        try:
+            if tmp_path and os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except:
+            pass
+        
         return {"success": True, "meeting_id": meeting_id, "language": chosen_language}
         
     except Exception as e:
-        print(f"🌐 MULTILANG WORKER: Error completing summary: {e}")
+        print(f"🌐 MULTILANG WORKER: Error: {e}")
         traceback.print_exc()
         try:
             if 'phone' in locals():
-                send_whatsapp(phone, "⚠️ Failed to generate summary. Please try again.")
+                send_whatsapp(phone, "⚠️ Processing failed. Please try again.")
         except:
             pass
         return {"error": str(e)}
