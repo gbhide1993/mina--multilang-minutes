@@ -1,4 +1,4 @@
-# app_multilang.py - Multi-language version of app.py
+# app.py - Multi-language WhatsApp Meeting Minutes App
 """
 Multi-language WhatsApp Meeting Minutes App
 Based on app.py but with 9 Indian language support
@@ -42,6 +42,7 @@ TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM") or os.getenv("TWILIO_FR
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
 RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET")
+TEST_MODE = os.getenv("TEST_MODE", "0") == "1"
 LANGUAGE = os.getenv("LANGUAGE", "en")
 DATABASE_URL = os.getenv("DATABASE_URL")
 DEFAULT_SUBSCRIPTION_MINUTES = float(os.getenv("DEFAULT_SUBSCRIPTION_MINUTES", "30.0"))
@@ -97,6 +98,38 @@ def _ext_from_content_type(ct: str):
     }
     return mapping.get(ct)
 
+def download_file(url, fallback_ext=".m4a"):
+    """Download the media URL to a temporary file. Preserve extension based on Content-Type header if possible. Returns local path."""
+    try:
+        resp = requests.get(url, stream=True, timeout=60)
+        resp.raise_for_status()
+    except Exception as e:
+        debug_print("download_file: request failed:", e)
+        raise
+
+    ct = resp.headers.get("Content-Type", "")
+    ext = _ext_from_content_type(ct)
+    if not ext:
+        path = unquote(urlparse(url).path)
+        guessed = os.path.splitext(path)[1]
+        ext = guessed if guessed else fallback_ext
+
+    fname = f"incoming_{int(time.time())}{ext}"
+    tmp_path = os.path.join(TEMP_DIR, fname)
+
+    try:
+        with open(tmp_path, "wb") as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+    except Exception as e:
+        debug_print("download_file: writing file failed:", e)
+        raise
+
+    debug_print(f"Downloading media from: {url}")
+    debug_print(f"Saved media to: {tmp_path}  (Content-Type: {ct}, ext used: {ext})")
+    return tmp_path
+
 def download_media_to_local(url, fallback_ext=".m4a"):
     """Download Twilio media (with Basic Auth if needed) to temp file and return local path."""
     if not url:
@@ -150,6 +183,41 @@ def get_audio_duration_seconds(path: str) -> float:
         debug_print("File size fallback failed:", e2)
         return 30.0
 
+def format_minutes_for_whatsapp(result: dict) -> str:
+    """Turn the structured result into a WhatsApp-friendly text reply (not JSON)."""
+    summary = result.get("summary", "").strip()
+    bullets = result.get("bullets", []) or []
+    participants = result.get("participants", []) or []
+
+    out = []
+    if summary:
+        out.append("*Summary*\n" + summary)
+    if participants:
+        p = ", ".join(participants) if isinstance(participants, list) else str(participants)
+        out.append(f"*Participants*: {p}")
+    if bullets:
+        out.append("*Key Points / Action Items*")
+        for b in bullets:
+            out.append(f"• {b}")
+    return "\n\n".join(out).strip()
+
+def compute_audio_duration_seconds(file_path):
+    """Compute audio duration safely using Mutagen."""
+    try:
+        audio = MutagenFile(file_path)
+        if not audio or not getattr(audio.info, 'length', None):
+            return 0.0
+        return round(audio.info.length, 2)
+    except Exception as e:
+        print("⚠️ Could not compute duration:", e)
+        return 0.0
+
+def format_summary_for_whatsapp(summary_text):
+    """Make the summary WhatsApp-friendly (bold, emoji, bullet formatting)."""
+    formatted = re.sub(r"^- ", "• ", summary_text, flags=re.MULTILINE)
+    header = "📝 *Meeting Summary:*\n\n"
+    return header + formatted.strip()
+
 def normalize_phone_for_db(phone):
     """Ensure consistent phone format for DB keys."""
     if not phone:
@@ -178,21 +246,19 @@ def _get_pending_summary_job(phone):
         debug_print(f"Error checking pending jobs: {e}")
     return None
 
-@app.route("/twilio-webhook-multilang", methods=["POST"])
-def twilio_webhook_multilang():
+@app.route("/twilio-webhook", methods=["POST"])
+def twilio_webhook():
     """Multi-language webhook handler with ALL original features"""
-    # Log all incoming requests for debugging
     from datetime import datetime as dt
-    print(f"📞 MULTILANG WEBHOOK: Received request from {request.remote_addr} at {dt.utcnow()}")
-    print(f"📞 MULTILANG WEBHOOK: Headers: {dict(request.headers)}")
-    print(f"📞 MULTILANG WEBHOOK: Form data: {dict(request.form)}")
+    print(f"📞 WEBHOOK: Received request from {request.remote_addr} at {dt.utcnow()}")
+    print(f"📞 WEBHOOK: Headers: {dict(request.headers)}")
+    print(f"📞 WEBHOOK: Form data: {dict(request.form)}")
     
     try:
         sender_raw = request.values.get("From") or request.form.get("From")
         sender = normalize_phone_for_db(sender_raw)
         message_sid = request.values.get("MessageSid") or request.form.get("MessageSid")
         media_url = request.values.get("MediaUrl0") or request.form.get("MediaUrl0")
-        # compute media_hash fallback if no MessageSid
         media_hash = None
         if not message_sid and media_url:
             media_hash = hashlib.sha256(media_url.encode("utf-8")).hexdigest()
@@ -218,60 +284,56 @@ def twilio_webhook_multilang():
             # Language choice - could be preference setting OR summary language selection
             lang_choice = parse_language_choice(body_text)
             if lang_choice:
-                # Check if user has a pending summary job
+                # Check if user has pending summary job
                 pending_job = _get_pending_summary_job(sender)
                 if pending_job:
-                    # Complete the summary job with selected language
+                    # Complete pending summary with selected language
                     from worker_multilang import complete_summary_job
-                    result = complete_summary_job(pending_job['meeting_id'], lang_choice)
-                    if result.get('success'):
-                        lang_name = get_language_name(lang_choice)
-                        send_whatsapp(sender, f"✅ Generating summary in {lang_name}...")
-                    else:
+                    try:
+                        result = complete_summary_job(pending_job['meeting_id'], lang_choice)
+                        if result.get('success'):
+                            lang_name = get_language_name(lang_choice)
+                            debug_print(f"✅ Completed summary for meeting {pending_job['meeting_id']} in {lang_name}")
+                        else:
+                            send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
+                    except Exception as e:
+                        debug_print(f"Error completing summary: {e}")
                         send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
+                    return ("", 204)
                 else:
-                    # Set user preference
+                    # Set user language preference
                     set_user_language(sender, lang_choice)
                     lang_name = get_language_name(lang_choice)
-                    send_whatsapp(sender, f"✅ Language preference set to {lang_name}\n\nNow send a voice message for transcription!")
-                return ("", 204)
+                    send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
+                    return ("", 204)
             
-            # Default guidance with smart language hint
+            # Default guidance message
             try:
                 current_lang = get_user_language(sender)
                 lang_name = get_language_name(current_lang)
-                from db_multilang import is_user_language_explicitly_set
-                
-                if is_user_language_explicitly_set(sender):
-                    # User has set language preference
-                    send_whatsapp(sender, (
-                        f"Hi 👋 — I can transcribe voice messages in {lang_name}.\n\n"
-                        "🎙️ Send a voice note for meeting minutes\n"
-                        "🌐 Type 'language' to change language"
-                    ))
-                else:
-                    # User hasn't set language - show smart guidance
-                    send_whatsapp(sender, (
-                        "Hi 👋 — I can transcribe voice messages in multiple Indian languages!\n\n"
-                        "🎙️ Send a voice note for meeting minutes\n"
-                        "🌐 Type 'language' to choose your preferred language\n\n"
-                        "*Smart Detection*: I'll auto-detect your language if not set!"
-                    ))
+                send_whatsapp(sender, (
+                    f"Hi 👋 — I can transcribe voice messages in {lang_name}.\n\n"
+                    "🎙️ Send a voice note for meeting minutes\n"
+                    "🌐 Type 'language' to change language"
+                ))
             except Exception as e:
                 debug_print("Failed to send guidance reply:", e)
             return ("", 204)
 
-        # download media to local file
+        # Download media to local file
         local_path = download_media_to_local(media_url)
+        if not local_path:
+            send_whatsapp(sender, "⚠️ Failed to download audio. Please try again.")
+            return ("", 204)
 
-        # compute duration using mutagen
+        # Compute duration using mutagen
         duration_seconds = get_audio_duration_seconds(local_path)
         minutes = round(duration_seconds / 60.0, 2)
 
-        # Now perform an atomic reservation: lock user row, check credits/subscription, deduct and insert meeting row
+        # Atomic reservation: lock user row, check credits/subscription, deduct and insert meeting row
         with get_conn() as conn, conn.cursor() as cur:
             phone = sender
-            # lock user row to avoid race conditions
+            # Lock user row to avoid race conditions
             cur.execute("SELECT credits_remaining, subscription_active, subscription_expiry FROM users WHERE phone=%s FOR UPDATE", (phone,))
             row = cur.fetchone()
             if row:
@@ -279,12 +341,12 @@ def twilio_webhook_multilang():
                 sub_active = bool(row[1])
                 sub_expiry = row[2]
             else:
-                # create user if missing
+                # Create user if missing
                 cur.execute("""
-                    INSERT INTO users (phone, credits_remaining, subscription_active, preferred_language, created_at)
-                    VALUES (%s, %s, %s, %s, now())
+                    INSERT INTO users (phone, credits_remaining, subscription_active, created_at)
+                    VALUES (%s, %s, %s, now())
                     RETURNING credits_remaining, subscription_active, subscription_expiry
-                """, (phone, 30.0, False, 'hi'))
+                """, (phone, 30.0, False))
                 newr = cur.fetchone()
                 if newr is None:
                     credits_remaining = 30.0
@@ -300,7 +362,7 @@ def twilio_webhook_multilang():
                         sub_active = bool(newr[1])
                         sub_expiry = newr[2]
 
-            # If subscription active and not expired → do not deduct
+            # Check subscription status
             from datetime import datetime as dt, timezone
             now = dt.now(timezone.utc)
             if sub_active and (sub_expiry is None or sub_expiry > now):
@@ -309,7 +371,7 @@ def twilio_webhook_multilang():
                 to_deduct = minutes
 
             if to_deduct > 0 and credits_remaining < to_deduct:
-                # Not enough credits: create Razorpay payment link and send it
+                # Not enough credits: create payment link
                 conn.rollback()
                 try:
                     SUBSCRIPTION_PRICE_RUPEES = float(os.getenv("SUBSCRIPTION_PRICE_RUPEES", "499.0"))
@@ -319,16 +381,15 @@ def twilio_webhook_multilang():
                         url = payment.get("order").get("short_url") if payment.get("order").get("short_url") else f"{os.getenv('PLATFORM_URL','')}/pay?order_id={order_id}"
                     else:
                         url = f"{os.getenv('PLATFORM_URL','')}/pay?order_id={order_id}"
-
                     send_whatsapp(phone, (
                         "⚠️ You don't have enough free minutes to transcribe this audio. "
                         "Top up to continue — follow this secure payment link:\n\n" + url
                     ))
                 except Exception as e:
-                    debug_print("Failed to create/send payment link:", e, traceback.format_exc())
+                    debug_print("Failed to create/send payment link:", e)
                     send_whatsapp(phone, "⚠️ You have insufficient free minutes. Please visit the app to subscribe.")
                 return ("", 204)
-                
+
             # Insert meeting row with message_sid = dedupe_key
             cur.execute("""
                 INSERT INTO meeting_notes (phone, audio_file, transcript, summary, message_sid, created_at)
@@ -338,7 +399,7 @@ def twilio_webhook_multilang():
             new_row = cur.fetchone()
             if not new_row:
                 conn.rollback()
-                raise RuntimeError("Failed to insert meeting_notes row (no row returned)")
+                raise RuntimeError("Failed to insert meeting_notes row")
             if hasattr(new_row, "get"):
                 meeting_id = new_row.get("id")
             else:
@@ -348,48 +409,26 @@ def twilio_webhook_multilang():
                 raise RuntimeError("Failed to read meeting id after insert")
             conn.commit()
 
-            # Send payment link if balance is zero
-            try:
-                from db import get_user_credits
-                credits_remaining = get_user_credits(phone)
-            except Exception:
-                credits_remaining = None
-
-            if credits_remaining is not None and credits_remaining <= 0.0:
-                amount = float(os.getenv("SUBSCRIPTION_PRICE_RUPEES", "499.0"))
-                payment = create_payment_link_for_phone(phone, amount)
-                url = payment.get("order", {}).get("short_url") or f"{os.getenv('PLATFORM_URL','')}/pay?order_id={payment.get('order', {}).get('id')}"
-                send_whatsapp(phone, f"ℹ️ You've used your free minutes. Top up here: {url}")
-
-        # Cleanup local file after getting duration
+        # Cleanup local file
         try:
             if local_path and os.path.exists(local_path):
                 os.remove(local_path)
         except Exception as e:
             debug_print(f"Failed to cleanup temp file {local_path}:", e)
 
-        # --- ENQUEUE MULTILANG JOB ---
+        # Enqueue multilang job
         try:
-            from redis_optimizer import get_optimized_queue
-            opt_queue = get_optimized_queue()
-            
-            debug_print(f"About to enqueue multilang job for meeting_id={meeting_id}, media_url={media_url}")
-            job = opt_queue.enqueue_job(
-                "worker_multilang.process_audio_job_multilang",
-                meeting_id,
-                media_url
-            )
-            if job:
-                debug_print(f"✅ Successfully enqueued multilang job for meeting_id={meeting_id}")
-                current_lang = get_user_language(sender)
-                lang_name = get_language_name(current_lang)
-                from db_multilang import is_user_language_explicitly_set
-                
-                send_whatsapp(phone, "🎙️ Processing your audio with smart language detection... I'll ask you to choose summary language shortly!")
+            if queue:
+                job = queue.enqueue("worker_multilang.process_audio_job_multilang", meeting_id, media_url)
+                if job:
+                    debug_print(f"✅ Successfully enqueued multilang job for meeting_id={meeting_id}")
+                    send_whatsapp(phone, "🎙️ Processing your audio... I'll send the transcription and language options shortly!")
+                else:
+                    raise Exception("Job enqueue returned None")
             else:
-                raise Exception("Job enqueue returned None")
+                raise Exception("Queue not initialized")
         except Exception as e:
-            debug_print("❌ Failed to enqueue multilang job:", e, traceback.format_exc())
+            debug_print("❌ Failed to enqueue multilang job:", e)
             try:
                 send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again.")
             except Exception:
@@ -398,15 +437,13 @@ def twilio_webhook_multilang():
         return ("", 204)
 
     except Exception as e:
-        print("ERROR processing multilang webhook:", e, traceback.format_exc())
+        print("ERROR processing twilio webhook:", e, traceback.format_exc())
         return ("", 204)
 
-# ----------------------------------
-# Razorpay webhook (idempotent) - SAME AS ORIGINAL
-# ----------------------------------
-@app.route("/razorpay-webhook-multilang", methods=["POST"])
-def razorpay_webhook_multilang():
-    """Razorpay webhook endpoint (production-safe)."""
+
+@app.route("/razorpay-webhook", methods=["POST"])
+def razorpay_webhook():
+    """Razorpay webhook endpoint (production-safe)"""
     raw_bytes = request.get_data()
     signature_hdr = request.headers.get("X-Razorpay-Signature", "") or request.headers.get("x-razorpay-signature", "")
 
@@ -445,15 +482,13 @@ def razorpay_webhook_multilang():
         debug_print("Error handling Razorpay webhook:", e, traceback.format_exc())
         return ("Internal error", 500)
 
-# -------------------------
-# Admin endpoints - SAME AS ORIGINAL
-# -------------------------
+
 @app.route("/admin/user/<path:phone>", methods=["GET"])
 def admin_get_user(phone):
-    """Simple admin endpoint to view user state."""
+    """Admin endpoint to view user state"""
     try:
         with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT phone, credits_remaining, subscription_active, subscription_expiry, preferred_language, created_at FROM users WHERE phone=%s", (phone,))
+            cur.execute("SELECT phone, credits_remaining, subscription_active, subscription_expiry, created_at FROM users WHERE phone=%s", (phone,))
             row = cur.fetchone()
             if not row:
                 return jsonify({"error": "not found"}), 404
@@ -462,13 +497,17 @@ def admin_get_user(phone):
                 user_obj = dict(row)
             else:
                 user_obj = {
-                    "phone": row[0], "credits_remaining": row[1], "subscription_active": row[2],
-                    "subscription_expiry": row[3], "preferred_language": row[4], "created_at": row[5]
+                    "phone": row[0],
+                    "credits_remaining": row[1],
+                    "subscription_active": row[2],
+                    "subscription_expiry": row[3],
+                    "created_at": row[4]
                 }
             return jsonify({"user": user_obj}), 200
     except Exception as e:
         debug_print("admin_get_user error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/admin/notes/<path:phone>", methods=["GET"])
 def admin_get_notes(phone):
@@ -481,21 +520,25 @@ def admin_get_notes(phone):
                 if hasattr(r, "get"):
                     normalized.append(dict(r))
                 else:
-                    normalized.append({"id": r[0], "audio_file": r[1], "summary": r[2], "created_at": r[3]})
+                    normalized.append({
+                        "id": r[0],
+                        "audio_file": r[1],
+                        "summary": r[2],
+                        "created_at": r[3]
+                    })
             return jsonify({"notes": normalized}), 200
     except Exception as e:
         debug_print("admin_get_notes error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-# -------------------------
-# Health check and debug endpoints - SAME AS ORIGINAL
-# -------------------------
-@app.route("/health-multilang", methods=["GET"])
-def health_multilang():
-    return jsonify({"status": "ok", "version": "multilang", "languages": 9, "time": datetime.utcnow().isoformat()}), 200
 
-@app.route("/clear-queue-multilang", methods=["GET", "POST"])
-def clear_queue_multilang():
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()}), 200
+
+
+@app.route("/clear-queue", methods=["GET", "POST"])
+def clear_queue():
     """Clear Redis queue of old jobs"""
     try:
         from rq.registry import FailedJobRegistry, StartedJobRegistry, FinishedJobRegistry
@@ -529,8 +572,9 @@ def clear_queue_multilang():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/debug-queue-multilang", methods=["GET"])
-def debug_queue_multilang():
+
+@app.route("/debug-queue", methods=["GET"])
+def debug_queue():
     """Debug endpoint to check queue status"""
     try:
         from rq import Queue
@@ -542,14 +586,14 @@ def debug_queue_multilang():
             "default_queue_length": len(default_q),
             "transcribe_queue_length": len(transcribe_q),
             "default_jobs": [job.id for job in default_q.jobs[:5]],
-            "transcribe_jobs": [job.id for job in transcribe_q.jobs[:5]],
-            "version": "multilang"
+            "transcribe_jobs": [job.id for job in transcribe_q.jobs[:5]]
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/test-worker-multilang", methods=["GET", "POST"])
-def test_worker_multilang():
+
+@app.route("/test-worker", methods=["GET", "POST"])
+def test_worker():
     """Test endpoint to enqueue a simple job"""
     try:
         job = queue.enqueue("worker_multilang.test_worker_job")
@@ -559,21 +603,39 @@ def test_worker_multilang():
             "queue_name": queue.name,
             "queue_length": len(queue),
             "redis_connected": queue.connection.ping(),
-            "message": "Check worker logs for 'TEST WORKER JOB EXECUTED' message",
-            "version": "multilang"
+            "message": "Check worker logs for 'TEST MULTILANG WORKER JOB EXECUTED' message"
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-def test_worker_job():
-    """Simple test function"""
-    print("🧪 TEST MULTILANG WORKER JOB EXECUTED SUCCESSFULLY!")
-    return "test_success_multilang"
 
-# -------------------------
-# Main run
-# -------------------------
+@app.route("/test-whatsapp", methods=["POST"])
+def test_whatsapp():
+    """Test endpoint to simulate WhatsApp webhook with dummy audio"""
+    try:
+        test_payload = {
+            "From": "whatsapp:+1234567890",
+            "MessageSid": f"test_msg_{int(time.time())}",
+            "MediaUrl0": "https://www.soundjay.com/misc/sounds/bell-ringing-05.wav",
+            "Body": ""
+        }
+        
+        with app.test_request_context('/twilio-webhook', method='POST', data=test_payload):
+            response = twilio_webhook()
+            
+        return jsonify({
+            "status": "test_webhook_called",
+            "response_code": response[1] if isinstance(response, tuple) else 200,
+            "test_payload": test_payload
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if __name__ == "__main__":
     flask_debug = str(os.getenv("FLASK_DEBUG", "0")).lower() in ("1", "true", "yes")
-    debug_print("Starting Multilang Flask app (FLASK_DEBUG=%s) on port %s" % (flask_debug, os.getenv("PORT", "5001")))
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5001)), debug=flask_debug)
+    debug_print("Starting Flask multilang app (FLASK_DEBUG=%s) on port %s" % (flask_debug, os.getenv("PORT", "5000")))
+    if TEST_MODE:
+        app.run(host="0.0.0.0", port=5000, debug=True)
+    else:
+        app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=flask_debug)
