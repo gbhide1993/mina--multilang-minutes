@@ -229,19 +229,16 @@ def _get_pending_summary_job(phone):
     try:
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute("""
-                SELECT id, summary FROM meeting_notes 
-                WHERE phone=%s AND transcript IS NOT NULL AND summary LIKE '%awaiting_language_selection%'
+                SELECT id, detected_language FROM meeting_notes 
+                WHERE phone=%s AND job_state='awaiting_language_choice'
                 ORDER BY created_at DESC LIMIT 1
             """, (phone,))
             row = cur.fetchone()
             if row:
-                try:
-                    job_data = json.loads(row[1] if hasattr(row, '__getitem__') else row.summary)
-                    if job_data.get('status') == 'awaiting_language_selection':
-                        job_data['meeting_id'] = row[0] if hasattr(row, '__getitem__') else row.id
-                        return job_data
-                except:
-                    pass
+                return {
+                    'meeting_id': row[0] if hasattr(row, '__getitem__') else row.id,
+                    'detected_language': row[1] if hasattr(row, '__getitem__') else row.detected_language
+                }
     except Exception as e:
         debug_print(f"Error checking pending jobs: {e}")
     return None
@@ -281,23 +278,29 @@ def twilio_webhook():
             # Language choice for pending summary
             lang_choice = parse_language_choice(body_text)
             if lang_choice and pending_job:
-                # Store language choice for continuous worker
+                # Enqueue summary generation job
                 try:
                     meeting_id = pending_job['meeting_id']
-                    pending_job['chosen_language'] = lang_choice
                     
-                    with get_conn() as conn, conn.cursor() as cur:
-                        cur.execute("UPDATE meeting_notes SET summary=%s WHERE id=%s", 
-                                  (json.dumps(pending_job), meeting_id))
-                        conn.commit()
-                    
-                    lang_name = get_language_name(lang_choice)
-                    send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
-                    debug_print(f"✅ Language choice {lang_name} stored for meeting {meeting_id}")
+                    if queue:
+                        job = queue.enqueue(
+                            "worker_multilang_production.complete_summary_job",
+                            meeting_id,
+                            lang_choice,
+                            job_timeout=60 * 60
+                        )
+                        if job:
+                            lang_name = get_language_name(lang_choice)
+                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
+                            debug_print(f"✅ Enqueued summary job for meeting {meeting_id} in {lang_name}")
+                        else:
+                            send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
+                    else:
+                        send_whatsapp(sender, "⚠️ Service unavailable. Please try again later.")
                     
                 except Exception as e:
-                    debug_print(f"Error storing language choice: {e}")
-                    send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
+                    debug_print(f"Error enqueuing summary job: {e}")
+                    send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
                 return ("", 204)
             
             # Language menu request
@@ -321,19 +324,20 @@ def twilio_webhook():
                 send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
                 return ("", 204)
             
-            # Default guidance message only if no pending job
-            if not pending_job:
+            # Handle pending job vs new user differently
+            if pending_job:
+                # User has pending job but sent invalid text - show menu again
+                detected_lang = pending_job.get('detected_language', 'en')
+                detected_name = get_language_name(detected_lang)
+                menu = get_language_menu()
+                send_whatsapp(sender, f"⏳ *Please select a language from the menu:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
+            else:
+                # New user - show guidance
                 send_whatsapp(sender, (
                     "Hi 👋 — Send a voice message and I'll create meeting minutes!\n\n"
                     "🎙️ Send voice note → Choose summary language → Get results\n"
                     "🌐 Type 'language' to see supported languages"
                 ))
-            else:
-                # User has pending job but sent invalid text - show menu again
-                detected_lang = pending_job.get('detected_language', 'en')
-                detected_name = get_language_name(detected_lang)
-                menu = get_language_menu()
-                send_whatsapp(sender, f"⏳ *Please select a language:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
             return ("", 204)
 
         # Download media to local file
@@ -436,7 +440,7 @@ def twilio_webhook():
         try:
             if queue:
                 job = queue.enqueue(
-                    "worker_multilang_updated.process_audio_job_multilang",
+                    "worker_multilang_production.process_audio_job",
                     meeting_id,
                     media_url,
                     job_timeout=60 * 60,
