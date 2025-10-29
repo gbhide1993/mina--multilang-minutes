@@ -416,19 +416,25 @@ def twilio_webhook():
         except Exception as e:
             debug_print(f"Failed to cleanup temp file {local_path}:", e)
 
-        # Enqueue multilang job
+        # Enqueue job using correct worker function
         try:
             if queue:
-                job = queue.enqueue("worker_tasks_v1_working.process_audio_job", meeting_id, media_url)
+                job = queue.enqueue(
+                    "worker_tasks_v2_enhanced.process_audio_job_v2",
+                    meeting_id,
+                    media_url,
+                    job_timeout=60 * 60,
+                    result_ttl=60 * 60
+                )
                 if job:
-                    debug_print(f"✅ Successfully enqueued multilang job for meeting_id={meeting_id}")
-                    send_whatsapp(phone, "🎙️ Processing your audio... I'll send the transcription and language options shortly!")
+                    debug_print(f"✅ Successfully enqueued job {job.id} for meeting_id={meeting_id}")
+                    send_whatsapp(phone, "🎙️ Processing your audio... I'll send the summary shortly!")
                 else:
                     raise Exception("Job enqueue returned None")
             else:
                 raise Exception("Queue not initialized")
         except Exception as e:
-            debug_print("❌ Failed to enqueue multilang job:", e)
+            debug_print("❌ Failed to enqueue job:", e)
             try:
                 send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again.")
             except Exception:
@@ -596,7 +602,15 @@ def debug_queue():
 def test_worker():
     """Test endpoint to enqueue a simple job"""
     try:
-        job = queue.enqueue("worker_tasks_v1_working.test_worker_job")
+        job = queue.enqueue("worker_tasks.test_worker_job")
+        return jsonify({
+            "status": "job_enqueued",
+            "job_id": job.id,
+            "queue_name": queue.name,
+            "queue_length": len(queue),
+            "redis_connected": queue.connection.ping(),
+            "message": "Check worker logs for 'TEST WORKER JOB EXECUTED' message"
+        }), 200
         return jsonify({
             "status": "job_enqueued",
             "job_id": job.id,
