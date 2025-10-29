@@ -419,7 +419,7 @@ def twilio_webhook():
         # Enqueue multilang job
         try:
             if queue:
-                job = queue.enqueue("worker_multilang.process_audio_job_multilang", meeting_id, media_url)
+                job = queue.enqueue("worker_tasks.process_audio_job", meeting_id, media_url)
                 if job:
                     debug_print(f"✅ Successfully enqueued multilang job for meeting_id={meeting_id}")
                     send_whatsapp(phone, "🎙️ Processing your audio... I'll send the transcription and language options shortly!")
@@ -596,7 +596,7 @@ def debug_queue():
 def test_worker():
     """Test endpoint to enqueue a simple job"""
     try:
-        job = queue.enqueue("worker_multilang.test_worker_job")
+        job = queue.enqueue("worker_tasks.test_worker_job")
         return jsonify({
             "status": "job_enqueued",
             "job_id": job.id,
