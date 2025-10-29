@@ -1,7 +1,11 @@
 # openai_client_multilang.py - Multi-language OpenAI client
 import os
+from dotenv import load_dotenv
 from openai import OpenAI
 from typing import Optional
+
+# Load environment variables first
+load_dotenv()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -12,13 +16,21 @@ SUMMARIZE_MODEL = os.getenv("OPENAI_SUMMARIZE_MODEL", "gpt-4o-mini")
 
 def transcribe_file_multilang(file_path: str, language: Optional[str] = None) -> str:
     """Transcribe audio file with language support"""
-    from openai_client import transcribe_file
-    return transcribe_file(file_path, language)
+    try:
+        from openai_client import transcribe_file
+        return transcribe_file(file_path, language)
+    except Exception as e:
+        print(f"Warning: transcribe_file_multilang failed: {e}")
+        raise
 
 def summarize_text_multilang(text: str, instructions: str = "", max_tokens: int = 800, temperature: float = 0.1, language_code: str = "hi") -> str:
     """Return a structured summary with language support"""
-    from language_handler_v2 import get_summary_instructions
-    lang_instruction = get_summary_instructions(language_code)
+    try:
+        from language_handler_v2 import get_summary_instructions
+        lang_instruction = get_summary_instructions(language_code)
+    except Exception as e:
+        print(f"Warning: Failed to get language instructions: {e}")
+        lang_instruction = "Please provide the meeting summary."
     
     prompt = f"""You are a professional meeting summarizer. Create comprehensive meeting minutes.
 
@@ -50,5 +62,5 @@ Format as clear, readable text (not JSON).
         summary = response.choices[0].message.content.strip()
         return summary[:1500] + "..." if len(summary) > 1500 else summary
     except Exception as e:
-        print(f"Summarization failed: {e}")
+        print(f"Warning: Summarization failed: {e}")
         raise
