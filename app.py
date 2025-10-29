@@ -281,27 +281,23 @@ def twilio_webhook():
             # Language choice for pending summary
             lang_choice = parse_language_choice(body_text)
             if lang_choice and pending_job:
-                # Complete pending summary with selected language
+                # Store language choice for continuous worker
                 try:
-                    # Enqueue completion job
-                    if queue:
-                        job = queue.enqueue(
-                            "worker_multilang.complete_summary_job",
-                            pending_job['meeting_id'],
-                            lang_choice,
-                            job_timeout=60 * 60
-                        )
-                        if job:
-                            lang_name = get_language_name(lang_choice)
-                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
-                            debug_print(f"✅ Enqueued summary completion for meeting {pending_job['meeting_id']} in {lang_name}")
-                        else:
-                            send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
-                    else:
-                        send_whatsapp(sender, "⚠️ Service unavailable. Please try again later.")
+                    meeting_id = pending_job['meeting_id']
+                    pending_job['chosen_language'] = lang_choice
+                    
+                    with get_conn() as conn, conn.cursor() as cur:
+                        cur.execute("UPDATE meeting_notes SET summary=%s WHERE id=%s", 
+                                  (json.dumps(pending_job), meeting_id))
+                        conn.commit()
+                    
+                    lang_name = get_language_name(lang_choice)
+                    send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
+                    debug_print(f"✅ Language choice {lang_name} stored for meeting {meeting_id}")
+                    
                 except Exception as e:
-                    debug_print(f"Error enqueuing summary completion: {e}")
-                    send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
+                    debug_print(f"Error storing language choice: {e}")
+                    send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
                 return ("", 204)
             
             # Language menu request
@@ -325,20 +321,19 @@ def twilio_webhook():
                 send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
                 return ("", 204)
             
-            # Default guidance message
-            if pending_job:
-                # Remind user to select language for pending summary
-                detected_lang = pending_job.get('detected_language', 'en')
-                detected_name = get_language_name(detected_lang)
-                menu = get_language_menu()
-                send_whatsapp(sender, f"⏳ *Waiting for your choice*\n🔍 Detected: *{detected_name}*\n\n{menu}")
-            else:
-                # Regular guidance
+            # Default guidance message only if no pending job
+            if not pending_job:
                 send_whatsapp(sender, (
                     "Hi 👋 — Send a voice message and I'll create meeting minutes!\n\n"
                     "🎙️ Send voice note → Choose summary language → Get results\n"
                     "🌐 Type 'language' to see supported languages"
                 ))
+            else:
+                # User has pending job but sent invalid text - show menu again
+                detected_lang = pending_job.get('detected_language', 'en')
+                detected_name = get_language_name(detected_lang)
+                menu = get_language_menu()
+                send_whatsapp(sender, f"⏳ *Please select a language:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
             return ("", 204)
 
         # Download media to local file
@@ -441,7 +436,7 @@ def twilio_webhook():
         try:
             if queue:
                 job = queue.enqueue(
-                    "worker_multilang.process_audio_job_multilang",
+                    "worker_multilang_updated.process_audio_job_multilang",
                     meeting_id,
                     media_url,
                     job_timeout=60 * 60,
@@ -449,7 +444,7 @@ def twilio_webhook():
                 )
                 if job:
                     debug_print(f"✅ Successfully enqueued job {job.id} for meeting_id={meeting_id}")
-                    send_whatsapp(phone, "🎙️ Processing your audio... I'll send the summary shortly!")
+                    send_whatsapp(phone, "🎙️ Processing your audio... I'll transcribe it first!")
                 else:
                     raise Exception("Job enqueue returned None")
             else:
