@@ -59,7 +59,7 @@ if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
 try:
     init_db()
     init_multilang_db()
-    print("✅ Database and multi-language support initialized")
+    print("Database and multi-language support initialized")
 except Exception as e:
     print("init_db() failed:", e)
 
@@ -74,9 +74,9 @@ try:
     redis_conn = get_redis_conn_or_raise()
     queue = get_queue()
     redis_url = get_redis_url()
-    print("✅ Redis connection and queue initialized.")
+    print("Redis connection and queue initialized.")
 except Exception as e:
-    print("⚠️ Failed to initialize Redis:", e)
+    print("Failed to initialize Redis:", e)
     redis_conn = None
     queue = None
     redis_url = None
@@ -228,17 +228,37 @@ def _get_pending_summary_job(phone):
     """Check if user has a pending summary job awaiting language selection"""
     try:
         with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT id, detected_language FROM meeting_notes 
-                WHERE phone=%s AND job_state='awaiting_language_choice'
-                ORDER BY created_at DESC LIMIT 1
-            """, (phone,))
-            row = cur.fetchone()
-            if row:
-                return {
-                    'meeting_id': row[0] if hasattr(row, '__getitem__') else row.id,
-                    'detected_language': row[1] if hasattr(row, '__getitem__') else row.detected_language
-                }
+            # Try new column first, fallback to old method
+            try:
+                cur.execute("""
+                    SELECT id, detected_language FROM meeting_notes 
+                    WHERE phone=%s AND job_state='awaiting_language_choice'
+                    ORDER BY created_at DESC LIMIT 1
+                """, (phone,))
+                row = cur.fetchone()
+                if row:
+                    return {
+                        'meeting_id': row[0] if hasattr(row, '__getitem__') else row.id,
+                        'detected_language': row[1] if hasattr(row, '__getitem__') else row.detected_language
+                    }
+            except:
+                # Fallback to old JSON method if columns don't exist
+                cur.execute("""
+                    SELECT id, summary FROM meeting_notes 
+                    WHERE phone=%s AND transcript IS NOT NULL AND summary IS NOT NULL
+                    ORDER BY created_at DESC LIMIT 1
+                """, (phone,))
+                row = cur.fetchone()
+                if row:
+                    try:
+                        job_data = json.loads(row[1] if hasattr(row, '__getitem__') else row.summary)
+                        if job_data.get('status') == 'awaiting_language_selection':
+                            return {
+                                'meeting_id': row[0] if hasattr(row, '__getitem__') else row.id,
+                                'detected_language': job_data.get('detected_language', 'en')
+                            }
+                    except:
+                        pass
     except Exception as e:
         debug_print(f"Error checking pending jobs: {e}")
     return None
@@ -284,7 +304,7 @@ def twilio_webhook():
                     
                     if queue:
                         job = queue.enqueue(
-                            "worker_multilang_production.complete_summary_job",
+                            "worker_multilang_production_fixed_clean.complete_summary_job",
                             meeting_id,
                             lang_choice,
                             job_timeout=60 * 60
@@ -440,7 +460,7 @@ def twilio_webhook():
         try:
             if queue:
                 job = queue.enqueue(
-                    "worker_multilang_production.process_audio_job",
+                    "worker_multilang_production_fixed_clean.process_audio_job",
                     meeting_id,
                     media_url,
                     job_timeout=60 * 60,
@@ -647,10 +667,13 @@ def test_worker():
 def test_whatsapp():
     """Test endpoint to simulate WhatsApp webhook with dummy audio"""
     try:
+        # Allow custom media URL for testing
+        media_url = request.json.get("media_url") if request.is_json else "https://www.soundjay.com/misc/sounds/bell-ringing-05.wav"
+        
         test_payload = {
             "From": "whatsapp:+1234567890",
             "MessageSid": f"test_msg_{int(time.time())}",
-            "MediaUrl0": "https://www.soundjay.com/misc/sounds/bell-ringing-05.wav",
+            "MediaUrl0": media_url,
             "Body": ""
         }
         
@@ -662,6 +685,50 @@ def test_whatsapp():
             "response_code": response[1] if isinstance(response, tuple) else 200,
             "test_payload": test_payload
         }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/test-audio-format", methods=["POST"])
+def test_audio_format():
+    """Test endpoint to check audio format compatibility"""
+    try:
+        data = request.get_json()
+        media_url = data.get("media_url")
+        if not media_url:
+            return jsonify({"error": "media_url required"}), 400
+        
+        # Download and analyze the audio file
+        import tempfile
+        resp = requests.get(media_url, timeout=30)
+        resp.raise_for_status()
+        
+        content_type = resp.headers.get('Content-Type', '')
+        first_bytes = resp.content[:16].hex() if len(resp.content) >= 16 else 'empty'
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.tmp') as tmp:
+            tmp.write(resp.content)
+            tmp_path = tmp.name
+        
+        try:
+            # Try to get format info using ffmpeg
+            import subprocess
+            result = subprocess.run([
+                'ffmpeg', '-i', tmp_path, '-f', 'null', '-'
+            ], capture_output=True, text=True, timeout=10)
+            
+            format_info = result.stderr  # ffmpeg outputs format info to stderr
+        except Exception as e:
+            format_info = f"ffmpeg error: {e}"
+        
+        os.remove(tmp_path)
+        
+        return jsonify({
+            "content_type": content_type,
+            "file_size": len(resp.content),
+            "first_bytes": first_bytes,
+            "ffmpeg_info": format_info[:500]  # Truncate for readability
+        }), 200
+        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
