@@ -602,7 +602,7 @@ def debug_queue():
 def test_worker():
     """Test endpoint to enqueue a simple job"""
     try:
-        job = queue.enqueue("worker_tasks.test_worker_job")
+        job = queue.enqueue("worker_tasks_v2_enhanced.test_worker_job")
         return jsonify({
             "status": "job_enqueued",
             "job_id": job.id,
