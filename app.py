@@ -320,7 +320,7 @@ def twilio_webhook():
                             "worker_multilang_production_fixed_clean.complete_summary_job",
                             meeting_id,
                             lang_choice,
-                            job_timeout=60 * 60
+                            job_timeout=45 * 60  # Optimized for 50 users
                         )
                         if job:
                             lang_name = get_language_name(lang_choice)
@@ -472,8 +472,8 @@ def twilio_webhook():
                     "worker_multilang_production_fixed_clean.process_audio_job",
                     meeting_id,
                     media_url,
-                    job_timeout=60 * 60,
-                    result_ttl=60 * 60
+                    job_timeout=45 * 60,  # Optimized for 50 users
+                    result_ttl=45 * 60
                 )
                 if job:
                     debug_print(f"✅ Successfully enqueued job {job.id} for meeting_id={meeting_id}")
