@@ -356,7 +356,7 @@ def twilio_webhook():
                 send_whatsapp(sender, (
                     "Hi 👋 — Send a voice message and I'll create meeting minutes!\n\n"
                     "🎙️ Send voice note → Choose summary language → Get results\n"
-                    "🌐 Type 'language' to see supported languages"
+                    
                 ))
             return ("", 204)
 
