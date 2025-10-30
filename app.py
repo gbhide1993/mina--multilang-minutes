@@ -292,6 +292,19 @@ def twilio_webhook():
         # Handle text messages for language selection
         body_text = (request.values.get("Body") or request.form.get("Body") or "").strip()
         if not media_url:
+            # Show privacy notice for 'privacy' or 'security' requests
+            if body_text.lower() in ['privacy', 'security', 'data', 'terms']:
+                send_whatsapp(sender, (
+                    "Privacy & Security\n\n"
+                    "• Audio files are processed securely via OpenAI\n"
+                    "• Recordings are not stored permanently\n"
+                    "• Transcripts are kept for service delivery only\n"
+                    "• No data is shared with third parties\n"
+                    "• You can request data deletion anytime\n\n"
+                    "By using this service, you consent to audio processing for transcription purposes."
+                ))
+                return ("", 204)
+            
             # Check if user has pending summary job first
             pending_job = _get_pending_summary_job(sender)
             
@@ -352,11 +365,13 @@ def twilio_webhook():
                 menu = get_language_menu()
                 send_whatsapp(sender, f"⏳ *Please select a language from the menu:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
             else:
-                # New user - show guidance
+                # New user - show guidance with privacy notice
                 send_whatsapp(sender, (
-                    "Hi 👋 — Send a voice message and I'll create meeting minutes!\n\n"
+                    "Hi! Send a voice message and I'll create meeting minutes!\n\n"
                     "🎙️ Send voice note → Choose summary language → Get results\n"
-                    
+                    "🌐 Type 'language' to see supported languages\n\n"
+                    "🔒 Privacy: Your audio is processed securely and not stored permanently. "
+                    "By using this service, you consent to audio processing for transcription."
                 ))
             return ("", 204)
 
@@ -411,23 +426,17 @@ def twilio_webhook():
                 to_deduct = minutes
 
             if to_deduct > 0 and credits_remaining < to_deduct:
-                # Not enough credits: create payment link
+                # Not enough credits: send subscription link
                 conn.rollback()
                 try:
-                    SUBSCRIPTION_PRICE_RUPEES = float(os.getenv("SUBSCRIPTION_PRICE_RUPEES", "499.0"))
-                    payment = create_payment_link_for_phone(phone, SUBSCRIPTION_PRICE_RUPEES)
-                    order_id = payment.get("order_id") or payment.get("order", {}).get("id")
-                    if payment and payment.get("order"):
-                        url = payment.get("order").get("short_url") if payment.get("order").get("short_url") else f"{os.getenv('PLATFORM_URL','')}/pay?order_id={order_id}"
-                    else:
-                        url = f"{os.getenv('PLATFORM_URL','')}/pay?order_id={order_id}"
+                    url = "https://rzp.io/rzp/X6bzLXmD"
                     send_whatsapp(phone, (
                         "⚠️ You don't have enough free minutes to transcribe this audio. "
-                        "Top up to continue — follow this secure payment link:\n\n" + url
+                        "Subscribe for unlimited access — follow this secure payment link:\n\n" + url
                     ))
                 except Exception as e:
-                    debug_print("Failed to create/send payment link:", e)
-                    send_whatsapp(phone, "⚠️ You have insufficient free minutes. Please visit the app to subscribe.")
+                    debug_print("Failed to send payment link:", e)
+                    send_whatsapp(phone, "⚠️ You have insufficient free minutes. Please subscribe to continue.")
                 return ("", 204)
 
             # Insert meeting row with message_sid = dedupe_key
