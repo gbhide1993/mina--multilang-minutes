@@ -10,3 +10,4 @@ openai
 redis
 rq
 ffmpeg-python
+cryptography 
