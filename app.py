@@ -22,18 +22,13 @@ from twilio.rest import Client as TwilioClient
 from mutagen import File as MutagenFile
 from utils import send_whatsapp
 from openai_client_multilang import transcribe_file_multilang, summarize_text_multilang
-# Redis imports removed for local worker mode
-# from redis_conn import get_redis_conn_or_raise, get_queue, get_redis_url
-# from redis import from_url
+from redis_conn import get_redis_conn_or_raise, get_queue, get_redis_url
+from redis import from_url
 
 # Import DB and payments (same as original)
 from db import (init_db, get_conn, get_or_create_user, get_remaining_minutes, deduct_minutes, save_meeting_notes, save_meeting_notes_with_sid, save_user, decrement_minutes_if_available, set_subscription_active)
 from db_multilang import init_multilang_db, set_user_language, get_user_language
-from language import get_language_menu, parse_language_choice, get_language_name
-from service_type_handler import (
-    init_service_type_db, set_user_service_type, get_user_service_type, 
-    is_transcription_only_user, get_service_type_menu, parse_service_choice, get_service_type_name
-)
+from language_handler_v2 import get_language_menu, parse_language_choice, get_language_name
 import re
 from payments import create_payment_link_for_phone, handle_webhook_event, verify_razorpay_webhook
 
@@ -64,8 +59,7 @@ if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
 try:
     init_db()
     init_multilang_db()
-    init_service_type_db()
-    print("Database, multi-language, and service type support initialized")
+    print("Database and multi-language support initialized")
 except Exception as e:
     print("init_db() failed:", e)
 
@@ -75,11 +69,17 @@ app = Flask(__name__)
 TEMP_DIR = os.getenv("TEMP_DIR", os.getcwd())
 os.makedirs(TEMP_DIR, exist_ok=True)
 
-# Local worker mode - no Redis
-redis_conn = None
-queue = None
-redis_url = None
-print("🚀 MinA started in LOCAL WORKER MODE (No Redis)")
+# Initialize Redis safely after Flask app is created
+try:
+    redis_conn = get_redis_conn_or_raise()
+    queue = get_queue()
+    redis_url = get_redis_url()
+    print("Redis connection and queue initialized.")
+except Exception as e:
+    print("Failed to initialize Redis:", e)
+    redis_conn = None
+    queue = None
+    redis_url = None
 
 # Utility functions (same as original)
 def debug_print(*args, **kwargs):
@@ -263,22 +263,6 @@ def _get_pending_summary_job(phone):
         debug_print(f"Error checking pending jobs: {e}")
     return None
 
-def _get_pending_service_selection(phone):
-    """Check if user needs to select service type"""
-    try:
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                SELECT id FROM meeting_notes 
-                WHERE phone=%s AND job_state='awaiting_service_selection'
-                ORDER BY created_at DESC LIMIT 1
-            """, (phone,))
-            row = cur.fetchone()
-            if row:
-                return row[0] if hasattr(row, '__getitem__') else row.id
-    except Exception as e:
-        debug_print(f"Error checking pending service selection: {e}")
-    return None
-
 @app.route("/twilio-webhook", methods=["POST"])
 def twilio_webhook():
     """Multi-language webhook handler with ALL original features"""
@@ -305,7 +289,7 @@ def twilio_webhook():
                     print("Duplicate message detected (dedupe_key). Skipping processing.")
                     return ("", 204)
         
-        # Handle text messages for service/language selection
+        # Handle text messages for language selection
         body_text = (request.values.get("Body") or request.form.get("Body") or "").strip()
         if not media_url:
             # Show privacy notice for 'privacy' or 'security' requests
@@ -321,37 +305,6 @@ def twilio_webhook():
                 ))
                 return ("", 204)
             
-            # Check for pending service selection first
-            pending_service_meeting = _get_pending_service_selection(sender)
-            
-            # Handle service type selection
-            service_choice = parse_service_choice(body_text)
-            if service_choice and pending_service_meeting:
-                # Set user's service preference
-                set_user_service_type(sender, service_choice)
-                service_name = get_service_type_name(service_choice)
-                
-                # Update meeting job state and enqueue appropriate worker
-                try:
-                    with get_conn() as conn, conn.cursor() as cur:
-                        cur.execute("SELECT audio_file FROM meeting_notes WHERE id=%s", (pending_service_meeting,))
-                        row = cur.fetchone()
-                        if row:
-                            audio_url = row[0] if hasattr(row, '__getitem__') else row.audio_file
-                            
-                            # Local worker mode - update job state for polling worker
-                            if service_choice == 'transcription_only':
-                                cur.execute("UPDATE meeting_notes SET job_state='pending_transcription' WHERE id=%s", (pending_service_meeting,))
-                                send_whatsapp(sender, f"📝 *{service_name}* selected!\n\n🔄 Processing your audio for transcription...")
-                            else:
-                                cur.execute("UPDATE meeting_notes SET job_state='pending_full_service' WHERE id=%s", (pending_service_meeting,))
-                                send_whatsapp(sender, f"📊 *{service_name}* selected!\n\n🔄 Processing your audio for summary...")
-                            conn.commit()
-                except Exception as e:
-                    debug_print(f"Error processing service selection: {e}")
-                    send_whatsapp(sender, "⚠️ Failed to process selection. Please try again.")
-                return ("", 204)
-            
             # Check if user has pending summary job first
             pending_job = _get_pending_summary_job(sender)
             
@@ -362,14 +315,21 @@ def twilio_webhook():
                 try:
                     meeting_id = pending_job['meeting_id']
                     
-                    # Local worker mode - update job state with language choice
-                    with get_conn() as conn, conn.cursor() as cur:
-                        cur.execute("UPDATE meeting_notes SET job_state='pending_summary', chosen_language=%s WHERE id=%s", (lang_choice, meeting_id))
-                        conn.commit()
-                    
-                    lang_name = get_language_name(lang_choice)
-                    send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
-                    debug_print(f"✅ Marked summary job for meeting {meeting_id} in {lang_name}")
+                    if queue:
+                        job = queue.enqueue(
+                            "worker_multilang_production_fixed_clean.complete_summary_job",
+                            meeting_id,
+                            lang_choice,
+                            job_timeout=60 * 60  # Standard timeout for Render worker
+                        )
+                        if job:
+                            lang_name = get_language_name(lang_choice)
+                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
+                            debug_print(f"✅ Enqueued summary job for meeting {meeting_id} in {lang_name}")
+                        else:
+                            send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
+                    else:
+                        send_whatsapp(sender, "⚠️ Service unavailable. Please try again later.")
                     
                 except Exception as e:
                     debug_print(f"Error enqueuing summary job: {e}")
@@ -390,23 +350,6 @@ def twilio_webhook():
                     send_whatsapp(sender, menu)
                 return ("", 204)
             
-            # Service type commands
-            if body_text.lower() in ['service', 'services', 'options', 'choose']:
-                menu = get_service_type_menu()
-                send_whatsapp(sender, menu)
-                return ("", 204)
-            
-            # Direct service type selection (when no pending job)
-            service_choice = parse_service_choice(body_text)
-            if service_choice and not pending_job and not pending_service_meeting:
-                set_user_service_type(sender, service_choice)
-                service_name = get_service_type_name(service_choice)
-                if service_choice == 'transcription_only':
-                    send_whatsapp(sender, f"📝 *{service_name}* enabled!\n\n• Complete text transcript\n• Multiple messages for long audio\n• Perfect for documentation\n\nSend audio to get transcript!")
-                else:
-                    send_whatsapp(sender, f"📊 *{service_name}* enabled!\n\n• Smart meeting summaries\n• Key points & action items\n• Multi-language support\n• Professional format\n\nSend audio for analysis!")
-                return ("", 204)
-            
             # Set user language preference (when no pending job)
             if lang_choice and not pending_job:
                 set_user_language(sender, lang_choice)
@@ -414,32 +357,21 @@ def twilio_webhook():
                 send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
                 return ("", 204)
             
-            # Handle different pending states
+            # Handle pending job vs new user differently
             if pending_job:
-                # User has pending summary job but sent invalid text - show language menu again
+                # User has pending job but sent invalid text - show menu again
                 detected_lang = pending_job.get('detected_language', 'en')
                 detected_name = get_language_name(detected_lang)
                 menu = get_language_menu()
                 send_whatsapp(sender, f"⏳ *Please select a language from the menu:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
-            elif pending_service_meeting:
-                # User has pending service selection - show service menu again
-                menu = get_service_type_menu()
-                send_whatsapp(sender, f"⏳ *Please choose your service type:*\n\n{menu}")
             else:
-                # New user - show guidance with service options
+                # New user - show guidance with privacy notice
                 send_whatsapp(sender, (
-                    "Hi! I offer two services:\n\n"
-                    "📝 *TRANSCRIPTION-ONLY*\n"
-                    "• Reply with *1* to enable\n"
-                    "• Complete text transcript\n"
-                    "• Multiple messages for long audio\n\n"
-                    "📊 *FULL SUMMARY SERVICE*\n"
-                    "• Reply with *2* to enable (default)\n"
-                    "• Smart meeting summaries\n"
-                    "• Key points & action items\n"
-                    "• Multi-language support\n\n"
-                    "🎙️ Send audio after selecting service type!\n"
-                    "🔒 Privacy: Audio processed securely, not stored permanently."
+                    "Hi! Send a voice message and I'll create meeting minutes!\n\n"
+                    "🎙️ Send voice note → Choose summary language → Get results\n"
+                    "🌐 Type 'language' to see supported languages\n\n"
+                    "🔒 Privacy: Your audio is processed securely and not stored permanently. "
+                    "By using this service, you consent to audio processing for transcription."
                 ))
             return ("", 204)
 
@@ -533,46 +465,29 @@ def twilio_webhook():
         except Exception as e:
             debug_print(f"Failed to cleanup temp file {local_path}:", e)
 
-        # Check user's service preference or ask for selection
-        user_service_type = get_user_service_type(phone)
-        
-        if user_service_type == 'full_service':
-            # User prefers full service - mark for local worker
+        # Enqueue job using correct worker function
+        try:
+            if queue:
+                job = queue.enqueue(
+                    "worker_multilang_production_fixed_clean.process_audio_job",
+                    meeting_id,
+                    media_url,
+                    job_timeout=60 * 60,  # Standard timeout for Render worker
+                    result_ttl=60 * 60
+                )
+                if job:
+                    debug_print(f"✅ Successfully enqueued job {job.id} for meeting_id={meeting_id}")
+                    send_whatsapp(phone, "🎙️ Processing your audio... I'll transcribe it first!")
+                else:
+                    raise Exception("Job enqueue returned None")
+            else:
+                raise Exception("Queue not initialized")
+        except Exception as e:
+            debug_print("❌ Failed to enqueue job:", e)
             try:
-                with get_conn() as conn, conn.cursor() as cur:
-                    cur.execute("UPDATE meeting_notes SET job_state='pending_full_service' WHERE id=%s", (meeting_id,))
-                    conn.commit()
-                debug_print(f"✅ Marked full service job for meeting_id={meeting_id}")
-                send_whatsapp(phone, "🎙️ Processing your audio for summary & analysis...")
-            except Exception as e:
-                debug_print("❌ Failed to mark full service job:", e)
                 send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again.")
-        
-        elif user_service_type == 'transcription_only':
-            # User prefers transcription-only - mark for local worker
-            try:
-                with get_conn() as conn, conn.cursor() as cur:
-                    cur.execute("UPDATE meeting_notes SET job_state='pending_transcription' WHERE id=%s", (meeting_id,))
-                    conn.commit()
-                debug_print(f"✅ Marked transcription job for meeting_id={meeting_id}")
-                send_whatsapp(phone, "📝 Processing your audio for transcription...")
-            except Exception as e:
-                debug_print("❌ Failed to mark transcription job:", e)
-                send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again.")
-        
-        else:
-            # New user - ask for service type selection
-            try:
-                with get_conn() as conn, conn.cursor() as cur:
-                    cur.execute("UPDATE meeting_notes SET job_state='awaiting_service_selection' WHERE id=%s", (meeting_id,))
-                    conn.commit()
-                
-                menu = get_service_type_menu()
-                send_whatsapp(phone, f"🎙️ *Audio received!*\n\n{menu}")
-                debug_print(f"✅ Audio saved, awaiting service selection for meeting_id={meeting_id}")
-            except Exception as e:
-                debug_print("❌ Failed to set pending service selection:", e)
-                send_whatsapp(phone, "⚠️ We couldn't process your audio. Please try again.")
+            except Exception:
+                pass
 
         return ("", 204)
 
@@ -679,19 +594,35 @@ def health():
 
 @app.route("/clear-queue", methods=["GET", "POST"])
 def clear_queue():
-    """Clear pending jobs from database (local worker mode)"""
+    """Clear Redis queue of old jobs"""
     try:
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM meeting_notes WHERE job_state LIKE 'pending%'")
-            pending_count = cur.fetchone()[0]
-            
-            cur.execute("UPDATE meeting_notes SET job_state=NULL WHERE job_state LIKE 'pending%'")
-            conn.commit()
+        from rq.registry import FailedJobRegistry, StartedJobRegistry, FinishedJobRegistry
+        
+        q = get_queue("default")
+        cleared_count = len(q)
+        q.empty()
+        
+        failed_registry = FailedJobRegistry(queue=q)
+        started_registry = StartedJobRegistry(queue=q)
+        finished_registry = FinishedJobRegistry(queue=q)
+        
+        failed_count = len(failed_registry)
+        started_count = len(started_registry)
+        finished_count = len(finished_registry)
+        
+        failed_registry.requeue(*failed_registry.get_job_ids())
+        failed_registry.cleanup()
+        started_registry.cleanup()
+        finished_registry.cleanup()
+        
+        q.empty()
         
         return jsonify({
-            "status": "local worker jobs cleared", 
-            "jobs_cleared": pending_count,
-            "mode": "local_worker"
+            "status": "all queues and registries cleared", 
+            "jobs_cleared": cleared_count,
+            "failed_cleared": failed_count,
+            "started_cleared": started_count,
+            "finished_cleared": finished_count
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -699,27 +630,18 @@ def clear_queue():
 
 @app.route("/debug-queue", methods=["GET"])
 def debug_queue():
-    """Debug endpoint to check local worker job status"""
+    """Debug endpoint to check queue status"""
     try:
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT job_state, COUNT(*) FROM meeting_notes WHERE job_state IS NOT NULL GROUP BY job_state")
-            job_counts = dict(cur.fetchall())
-            
-            cur.execute("SELECT id, phone, job_state, created_at FROM meeting_notes WHERE job_state IS NOT NULL ORDER BY created_at DESC LIMIT 10")
-            recent_jobs = []
-            for row in cur.fetchall():
-                recent_jobs.append({
-                    "id": row[0],
-                    "phone": row[1][-4:] if row[1] else "unknown",  # Last 4 digits for privacy
-                    "job_state": row[2],
-                    "created_at": str(row[3])
-                })
+        from rq import Queue
+        default_q = get_queue("default")
+        transcribe_q = get_queue("transcribe")
         
         return jsonify({
-            "mode": "local_worker",
-            "job_counts": job_counts,
-            "recent_jobs": recent_jobs,
-            "total_pending": sum(count for state, count in job_counts.items() if 'pending' in state)
+            "redis_url": get_redis_url()[:50] + "..." if get_redis_url() else None,
+            "default_queue_length": len(default_q),
+            "transcribe_queue_length": len(transcribe_q),
+            "default_jobs": [job.id for job in default_q.jobs[:5]],
+            "transcribe_jobs": [job.id for job in transcribe_q.jobs[:5]]
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -727,22 +649,24 @@ def debug_queue():
 
 @app.route("/test-worker", methods=["GET", "POST"])
 def test_worker():
-    """Test endpoint to create a test job for local worker"""
+    """Test endpoint to enqueue a simple job"""
     try:
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO meeting_notes (phone, audio_file, job_state) 
-                VALUES ('test:+1234567890', 'https://test.com/audio.mp3', 'pending_full_service')
-                RETURNING id
-            """)
-            test_id = cur.fetchone()[0]
-            conn.commit()
-        
+        job = queue.enqueue("worker_tasks_v2_enhanced.test_worker_job")
         return jsonify({
-            "status": "test_job_created",
-            "job_id": f"local_test_{test_id}",
-            "mode": "local_worker",
-            "message": "Check local worker logs for processing"
+            "status": "job_enqueued",
+            "job_id": job.id,
+            "queue_name": queue.name,
+            "queue_length": len(queue),
+            "redis_connected": queue.connection.ping(),
+            "message": "Check worker logs for 'TEST WORKER JOB EXECUTED' message"
+        }), 200
+        return jsonify({
+            "status": "job_enqueued",
+            "job_id": job.id,
+            "queue_name": queue.name,
+            "queue_length": len(queue),
+            "redis_connected": queue.connection.ping(),
+            "message": "Check worker logs for 'TEST MULTILANG WORKER JOB EXECUTED' message"
         }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
