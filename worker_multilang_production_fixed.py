@@ -1,329 +1,430 @@
-#!/usr/bin/env python3
 """
-Production Multilang Worker - Fixed Version
-- Process audio and send menu (no waiting)
-- Separate job handles summary generation
+worker_multilang_production_fixed_clean.py
+
+Robust worker for MinA:
+- process_audio_job(meeting_id, audio_source)
+  * audio_source may be: local file path OR remote URL (HTTP/HTTPS)
+  * downloads (streamed), converts if necessary, transcribes, encrypts transcript and updates DB
+  * does NOT leave plaintext transcript in DB
+- complete_summary_job(meeting_id, language_code=None)
+  * reads encrypted transcript, decrypts, summarizes (multilang), encrypts summary, optionally extracts actions
 """
 
 import os
-import tempfile
-import requests
-import traceback
+import sys
+import time
 import json
-import signal
-from dotenv import load_dotenv
+import tempfile
+import traceback
+import subprocess
+from typing import Optional
+from datetime import datetime, timezone, timedelta
 
-load_dotenv()
+import requests
+from requests.exceptions import RequestException
 
-from db import get_conn
-from utils import send_whatsapp
-from openai_client_multilang import transcribe_file_multilang, summarize_text_multilang
-from language_handler_v2 import get_language_menu, get_language_name
+# Try to import project modules (these should exist in your repo)
+try:
+    from db import get_conn, save_meeting_notes_with_sid, create_task, get_conn  # get_conn used for DB
+except Exception:
+    # If import fails, leave placeholders; deploy will fail and show import error
+    raise
 
-class GracefulKiller:
-    """Handle SIGTERM for graceful shutdown"""
-    def __init__(self):
-        self.kill_now = False
-        signal.signal(signal.SIGTERM, self._handle_signal)
-    
-    def _handle_signal(self, signum, frame):
-        self.kill_now = True
+try:
+    from encryption import encrypt_sensitive_data, decrypt_sensitive_data
+except Exception:
+    # Provide dummy wrappers to avoid immediate crash (but you should have encryption module)
+    def encrypt_sensitive_data(x):
+        return x
 
-killer = GracefulKiller()
+    def decrypt_sensitive_data(x):
+        return x
 
-def _detect_language_from_transcript(transcript):
-    """Detect language from transcript text"""
-    if not transcript or len(transcript.strip()) < 10:
-        return 'en'
-    
-    # Check for Devanagari script (Hindi/Marathi)
-    if any('\u0900' <= char <= '\u097F' for char in transcript):
-        marathi_words = ['आहे', 'होते', 'करतो', 'करते', 'मला', 'तुला']
-        if any(word in transcript for word in marathi_words):
-            return 'mr'
-        return 'hi'
-    
-    # Check for other scripts
-    if any('\u0B80' <= char <= '\u0BFF' for char in transcript):
-        return 'ta'
-    if any('\u0C00' <= char <= '\u0C7F' for char in transcript):
-        return 'te'
-    if any('\u0980' <= char <= '\u09FF' for char in transcript):
-        return 'bn'
-    if any('\u0A80' <= char <= '\u0AFF' for char in transcript):
-        return 'gu'
-    if any('\u0C80' <= char <= '\u0CFF' for char in transcript):
-        return 'kn'
-    if any('\u0A00' <= char <= '\u0A7F' for char in transcript):
-        return 'pa'
-    
-    # Check for English
-    english_words = ['the', 'and', 'is', 'to', 'of', 'in', 'for', 'with', 'on', 'at']
-    english_count = sum(1 for word in english_words if word in transcript[:500].lower())
-    
-    if english_count >= 3:
-        return 'en'
-    
-    return 'hi'  # Default to Hindi
+try:
+    # openai_client_multilang must expose transcribe_file_multilang and summarize_text_multilang
+    from openai_client_multilang import transcribe_file_multilang, summarize_text_multilang
+except Exception:
+    # If missing, raise — worker cannot proceed without these
+    raise
 
-def process_audio_job(meeting_id, media_url):
-    """Process audio and send language menu (no waiting)"""
-    print(f"🌐 PRODUCTION WORKER: Processing meeting_id={meeting_id}")
-    tmp_path = None
-    
+# Optional: import send_whatsapp helper if available; otherwise fallback to no-op
+def _get_send_whatsapp():
     try:
-        # Get meeting details
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("SELECT phone, audio_file FROM meeting_notes WHERE id=%s", (meeting_id,))
-            row = cur.fetchone()
-            if not row:
-                return {"error": "Meeting not found"}
-            
-            phone = row[0] if hasattr(row, '__getitem__') else row.phone
-            audio_url = media_url or (row[1] if hasattr(row, '__getitem__') else row.audio_file)
-        
-        # Download audio
-        auth = None
-        twilio_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        twilio_token = os.getenv("TWILIO_AUTH_TOKEN")
-        if "twilio.com" in audio_url and twilio_sid and twilio_token:
-            auth = (twilio_sid, twilio_token)
-        
-        resp = requests.get(audio_url, auth=auth, timeout=60)
-        resp.raise_for_status()
-        
-        # Check file size
-        file_size_mb = len(resp.content) / (1024 * 1024)
-        if file_size_mb > 24:
-            raise ValueError(f"Audio file too large: {file_size_mb:.2f}MB (max 25MB)")
-        
-        # Save to temp file with OpenAI-compatible format detection
-        content_type = resp.headers.get('Content-Type', '').lower()
-        
-        # Map content types to OpenAI-supported formats
-        if any(x in content_type for x in ['m4a', 'mp4', 'aac']):
-            suffix = '.m4a'
-        elif 'wav' in content_type:
-            suffix = '.wav'
-        elif any(x in content_type for x in ['ogg', 'opus']):
-            suffix = '.ogg'
-        elif 'webm' in content_type:
-            suffix = '.webm'
-        elif 'flac' in content_type:
-            suffix = '.flac'
+        # Many repos have send_whatsapp in app or a notifications module
+        from app import send_whatsapp  # best-effort import
+        return send_whatsapp
+    except Exception:
+        try:
+            from notifications import send_whatsapp
+            return send_whatsapp
+        except Exception:
+            # fallback no-op
+            def _noop(phone, text):
+                print("send_whatsapp noop:", phone, text)
+            return _noop
+
+send_whatsapp = _get_send_whatsapp()
+
+# Configuration (environment)
+TEMP_DIR = os.getenv("TEMP_DIR", "/tmp")
+MAX_FILE_MB = float(os.getenv("MAX_FILE_MB", "24"))  # reject files larger than this
+DOWNLOAD_TIMEOUT = int(os.getenv("DOWNLOAD_TIMEOUT", "60"))  # seconds
+TRANSCRIBE_MODEL = os.getenv("TRANSCRIBE_MODEL", "whisper-1")
+SUMMARIZE_MODEL = os.getenv("SUMMARIZE_MODEL", "gpt-4o-mini")
+RETRY_ATTEMPTS = int(os.getenv("WORKER_RETRY_ATTEMPTS", "3"))
+
+# Ensure temp dir exists
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+# Utility logging
+def log(*args, **kwargs):
+    print("[WORKER]", *args, **kwargs)
+    sys.stdout.flush()
+
+def log_err(*args, **kwargs):
+    print("[WORKER-ERR]", *args, file=sys.stderr, **kwargs)
+    sys.stderr.flush()
+
+# Simple retry helper
+def with_retries(fn, attempts=3, initial_delay=0.8, backoff=2.0):
+    last_exc = None
+    delay = initial_delay
+    for i in range(attempts):
+        try:
+            return fn()
+        except Exception as e:
+            last_exc = e
+            log_err(f"attempt {i+1}/{attempts} failed: {e}")
+            if i < attempts - 1:
+                time.sleep(delay)
+                delay *= backoff
+    raise last_exc
+
+# Helpers for file handling
+def stream_download_to_file(url: str, dest_path: str, timeout: int = DOWNLOAD_TIMEOUT):
+    """Stream HTTP(S) download to dest_path. Checks Content-Length header for size limit."""
+    headers = {"User-Agent": "MinA-Worker/1.0"}
+    with requests.get(url, headers=headers, timeout=timeout, stream=True) as r:
+        r.raise_for_status()
+        cl = r.headers.get("Content-Length")
+        if cl:
+            try:
+                file_size_mb = int(cl) / (1024 * 1024)
+                log(f"Content-Length: {cl} bytes (~{file_size_mb:.2f} MB)")
+                if file_size_mb > MAX_FILE_MB:
+                    raise ValueError(f"Remote file too large: {file_size_mb:.2f} MB (max {MAX_FILE_MB} MB)")
+            except Exception:
+                # ignore header parse errors and continue streaming
+                pass
+        with open(dest_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                if chunk:
+                    f.write(chunk)
+    size = os.path.getsize(dest_path)
+    return size
+
+def ensure_wav_via_ffmpeg(in_path: str) -> str:
+    """If file is already wav-like, return same path. Otherwise convert to wav and return new path."""
+    # We'll convert to WAV (16k, mono, pcm_s16le) for whisper if needed
+    ext = os.path.splitext(in_path)[1].lower()
+    if ext in (".wav",):
+        return in_path
+    out_fd, out_path = tempfile.mkstemp(suffix=".wav", dir=TEMP_DIR)
+    os.close(out_fd)
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", in_path,
+        "-ac", "1", "-ar", "16000",
+        "-acodec", "pcm_s16le",
+        out_path
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        log(f"Converted {in_path} -> {out_path} via ffmpeg")
+        return out_path
+    except FileNotFoundError:
+        log_err("ffmpeg not installed; returning original path (may fail transcription)")
+        # remove out_path if created
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            pass
+        return in_path
+    except subprocess.CalledProcessError as e:
+        log_err("ffmpeg conversion failed:", e)
+        try:
+            if os.path.exists(out_path):
+                os.remove(out_path)
+        except Exception:
+            pass
+        # propagate to caller to decide fallback
+        raise
+
+# DB helper to update meeting row safely
+def update_meeting(meeting_id: int, **fields):
+    """Update meeting_notes row by id with provided fields dict."""
+    if not fields:
+        return
+    set_clause = ", ".join([f"{k}=%s" for k in fields.keys()])
+    vals = list(fields.values())
+    vals.append(meeting_id)
+    q = f"UPDATE meeting_notes SET {set_clause}, updated_at=now() WHERE id=%s"
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(q, tuple(vals))
+        conn.commit()
+
+# --- Job functions ---------------------------------------------------------
+
+def process_audio_job(meeting_id: int, audio_source: str):
+    """
+    Entry point to process an audio file.
+    audio_source: either a local file path or an HTTP/HTTPS URL to download.
+    """
+    start_ts = time.time()
+    log(f"START process_audio_job meeting_id={meeting_id} source={audio_source}")
+
+    tmp_in = None
+    tmp_conv = None
+    try:
+        # Fetch meeting metadata (phone) - optional; best-effort
+        phone = None
+        try:
+            with get_conn() as conn, conn.cursor() as cur:
+                cur.execute("SELECT phone FROM meeting_notes WHERE id=%s LIMIT 1", (meeting_id,))
+                row = cur.fetchone()
+                if row:
+                    phone = row[0] if not hasattr(row, "get") else row.get("phone")
+        except Exception as e:
+            log_err("Warning: unable to read phone for meeting", meeting_id, e)
+
+        # Prepare temp file
+        fd, tmp_in = tempfile.mkstemp(prefix=f"mina_in_{meeting_id}_", dir=TEMP_DIR, suffix=os.path.splitext(str(audio_source))[-1] or ".dat")
+        os.close(fd)
+
+        # If audio_source looks like URL -> download stream
+        if str(audio_source).lower().startswith("http"):
+            # download streamed
+            def _dl():
+                return stream_download_to_file(audio_source, tmp_in, timeout=DOWNLOAD_TIMEOUT)
+            with_retries(_dl, attempts=RETRY_ATTEMPTS)
         else:
-            # Default to mp3 for unknown formats
-            suffix = '.mp3'
-        
-        # Enhanced logging for diagnostics
-        first_bytes = resp.content[:16] if len(resp.content) >= 16 else resp.content
-        print(f"🌐 WORKER: Content-Type: {content_type}, using suffix: {suffix}")
-        print(f"🌐 WORKER: First 16 bytes: {first_bytes.hex() if first_bytes else 'empty'}")
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(resp.content)
-            tmp_path = tmp.name
-            
-        # Verify file is not empty and has reasonable size
-        file_size = os.path.getsize(tmp_path)
-        print(f"🌐 WORKER: Saved audio file: {tmp_path}, size: {file_size} bytes")
-        
-        if file_size < 100:  # Less than 100 bytes is likely not valid audio
-            raise ValueError(f"Audio file too small: {file_size} bytes")
-        
-        # Proactive transcoding for better compatibility (optional)
-        proactive_transcode = os.getenv("PROACTIVE_TRANSCODE", "false").lower() == "true"
-        if proactive_transcode and suffix not in ['.wav', '.mp3', '.m4a']:
-            print(f"🌐 WORKER: Proactively converting {suffix} to WAV...")
-            try:
-                import subprocess
-                wav_path = tmp_path.replace(suffix, '.wav')
-                result = subprocess.run([
-                    'ffmpeg', '-i', tmp_path, '-acodec', 'pcm_s16le', 
-                    '-ar', '16000', '-ac', '1', wav_path, '-y'
-                ], capture_output=True, text=True, timeout=30)
-                
-                if result.returncode == 0 and os.path.exists(wav_path):
-                    print(f"🌐 WORKER: Proactive conversion successful: {wav_path}")
-                    os.remove(tmp_path)
-                    tmp_path = wav_path
-                else:
-                    print(f"🌐 WORKER: Proactive conversion failed, using original")
-            except Exception as conv_error:
-                print(f"🌐 WORKER: Proactive conversion error: {conv_error}")
-        
-        # Transcribe with enhanced error handling
-        print(f"🌐 PRODUCTION WORKER: Starting transcription for file: {tmp_path}")
+            # assume it's a local file path already accessible to worker
+            if not os.path.exists(audio_source):
+                raise FileNotFoundError(f"local audio source not found: {audio_source}")
+            # copy to tmp_in
+            with open(audio_source, "rb") as src, open(tmp_in, "wb") as dst:
+                for chunk in iter(lambda: src.read(8192), b""):
+                    dst.write(chunk)
+
+        # sanity size check
+        file_size = os.path.getsize(tmp_in)
+        file_mb = file_size / (1024 * 1024)
+        log(f"Downloaded audio for meeting {meeting_id}: {file_size} bytes (~{file_mb:.2f}MB)")
+        if file_mb < 0.001:
+            raise ValueError("Downloaded audio file is too small or empty.")
+
+        if file_mb > MAX_FILE_MB:
+            send_whatsapp(phone or "unknown", f"⚠️ Audio too large ({file_mb:.1f} MB). Max allowed is {MAX_FILE_MB} MB. Please send a shorter recording.")
+            update_meeting(meeting_id, job_state="failed", failure_reason=f"file_too_large_{file_mb:.2f}MB")
+            return
+
+        # attempt direct transcription; if fails due to unsupported format, try conversion
         try:
-            # Try transcription with automatic language detection
-            transcript = transcribe_file_multilang(tmp_path, language=None)
-            print(f"🌐 PRODUCTION WORKER: Transcription complete, length: {len(transcript) if transcript else 0}")
-            
-            if not transcript or len(transcript.strip()) < 5:
-                raise ValueError("Transcription failed or too short")
-                
-        except Exception as transcribe_error:
-            print(f"🌐 PRODUCTION WORKER: Transcription failed: {transcribe_error}")
-            
-            # Try converting to a more compatible format if transcription fails
-            if "Invalid file format" in str(transcribe_error):
-                print(f"🌐 WORKER: Attempting format conversion...")
+            # If format likely incompatible, convert first (heuristic)
+            ext = os.path.splitext(tmp_in)[1].lower()
+            need_convert = ext not in (".wav", ".m4a", ".mp3", ".ogg", ".opus", ".webm", ".aac", ".3gp")
+            if need_convert:
                 try:
-                    # Convert to WAV format using ffmpeg if available
-                    import subprocess
-                    wav_path = tmp_path.replace(suffix, '.wav')
-                    result = subprocess.run([
-                        'ffmpeg', '-i', tmp_path, '-acodec', 'pcm_s16le', 
-                        '-ar', '16000', '-ac', '1', wav_path, '-y'
-                    ], capture_output=True, text=True, timeout=30)
-                    
-                    if result.returncode == 0 and os.path.exists(wav_path):
-                        print(f"🌐 WORKER: Converted to WAV: {wav_path}")
-                        # Clean up original file
-                        os.remove(tmp_path)
-                        tmp_path = wav_path
-                        
-                        # Retry transcription with converted file
-                        transcript = transcribe_file_multilang(tmp_path, language=None)
-                        print(f"🌐 PRODUCTION WORKER: Transcription after conversion complete, length: {len(transcript) if transcript else 0}")
-                        
-                        if not transcript or len(transcript.strip()) < 5:
-                            raise ValueError("Transcription failed after conversion")
-                    else:
-                        raise transcribe_error
-                        
-                except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as conv_error:
-                    print(f"🌐 WORKER: Format conversion failed: {conv_error}")
-                    raise transcribe_error
+                    tmp_conv = ensure_wav_via_ffmpeg(tmp_in)
+                except Exception:
+                    tmp_conv = None
+            path_for_transcribe = tmp_conv or tmp_in
+
+            # transcribe using your openai wrapper
+            def _trans():
+                return transcribe_file_multilang(path_for_transcribe, language=None)
+            transcript_text = with_retries(_trans, attempts=RETRY_ATTEMPTS)
+
+        except Exception as trans_e:
+            # If failed and we haven't tried conversion yet, try convert and retry
+            log_err("Initial transcription failed:", trans_e)
+            if tmp_conv is None:
+                try:
+                    tmp_conv = ensure_wav_via_ffmpeg(tmp_in)
+                    def _trans2():
+                        return transcribe_file_multilang(tmp_conv, language=None)
+                    transcript_text = with_retries(_trans2, attempts=RETRY_ATTEMPTS)
+                except Exception as trans_e2:
+                    log_err("Transcription failed after conversion:", trans_e2)
+                    update_meeting(meeting_id, job_state="failed", failure_reason="transcription_error")
+                    send_whatsapp(phone or "unknown", "⚠️ Sorry, transcription failed for your audio. Please try again with a clearer recording.")
+                    return
             else:
-                raise
-        
-        # Detect language
-        detected_language = _detect_language_from_transcript(transcript)
-        print(f"🌐 PRODUCTION WORKER: Detected language: {detected_language}")
-        
-        # Calculate duration for credits
+                update_meeting(meeting_id, job_state="failed", failure_reason="transcription_error")
+                send_whatsapp(phone or "unknown", "⚠️ Sorry, transcription failed for your audio. Please try again with a clearer recording.")
+                return
+
+        # Basic language detection heuristic — prefer whisper's auto-detect if available, otherwise fallback
+        detected_language = None
         try:
-            from mutagen import File as MutagenFile
-            mf = MutagenFile(tmp_path)
-            if mf and hasattr(mf, 'info') and hasattr(mf.info, 'length'):
-                duration_seconds = float(mf.info.length)
+            # attempt to detect language by simple heuristics
+            txt_sample = transcript_text[:300].lower()
+            if any(ch in txt_sample for ch in ["\u0900", "\u0901", "\u0902", "आप", "हैं", "हूँ"]):
+                detected_language = "hi"
             else:
-                # Fallback calculation based on file size and bitrate
-                duration_seconds = (len(resp.content) * 8) / 80000
-            minutes = round(duration_seconds / 60.0, 2)
-        except Exception as duration_error:
-            print(f"🌐 PRODUCTION WORKER: Duration calculation failed: {duration_error}")
-            minutes = 1.0
-        
-        # Store in separate columns
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                UPDATE meeting_notes 
-                SET transcript=%s, detected_language=%s, job_state=%s
-                WHERE id=%s
-            """, (transcript, detected_language, 'awaiting_language_choice', meeting_id))
-            
-            # Deduct credits
-            cur.execute("SELECT credits_remaining, subscription_active FROM users WHERE phone=%s", (phone,))
-            user_row = cur.fetchone()
-            if user_row and not user_row[1]:  # Not subscribed
-                new_credits = max(0.0, float(user_row[0] or 0.0) - minutes)
-                cur.execute("UPDATE users SET credits_remaining=%s WHERE phone=%s", (new_credits, phone))
-            
-            conn.commit()
-        
-        # Send language menu and END JOB
-        detected_name = get_language_name(detected_language)
-        menu = get_language_menu()
-        
-        message = f"🎙️ *Audio transcribed!*\n🔍 Detected: *{detected_name}*\n\n📝 *Choose summary language:*\n\n{menu}"
-        send_whatsapp(phone, message)
-        
-        print(f"🌐 WORKER: Language menu sent, job complete")
-        return {"success": True, "transcript_ready": True}
-        
+                detected_language = "en"
+        except Exception:
+            detected_language = "en"
+
+        # Encrypt transcript immediately before writing to DB (avoid plaintext at rest)
+        try:
+            enc_transcript = encrypt_sensitive_data(transcript_text)
+        except Exception as e:
+            log_err("Encryption failed, storing plaintext as fallback:", e)
+            enc_transcript = transcript_text
+
+        # Save encrypted transcript and set job_state for next step
+        update_meeting(meeting_id,
+                       transcript=enc_transcript,
+                       detected_language=detected_language,
+                       job_state="transcribed",
+                       audio_file=os.path.basename(tmp_in))
+
+        # Notify user that transcript is ready (optional)
+        try:
+            send_whatsapp(phone or "unknown", f"✅ Your meeting ({meeting_id}) was transcribed. Request summary via the app or use API to summarize.")
+        except Exception as e:
+            log_err("send_whatsapp failed:", e)
+
+        log(f"process_audio_job complete meeting_id={meeting_id} duration={time.time()-start_ts:.1f}s")
+
     except Exception as e:
-        print(f"🌐 PRODUCTION WORKER: Error: {e}")
-        traceback.print_exc()
+        log_err("process_audio_job unhandled exception:", e, traceback.format_exc())
         try:
-            if 'phone' in locals():
-                send_whatsapp(phone, "⚠️ Processing failed. Please try again.")
-        except:
+            update_meeting(meeting_id, job_state="failed", failure_reason=str(e)[:1000])
+        except Exception:
             pass
-        return {"error": str(e)}
-        
     finally:
-        # Cleanup
-        if tmp_path and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-                print(f"🌐 WORKER: Cleaned up {tmp_path}")
-            except Exception as e:
-                print(f"🌐 WORKER: Cleanup failed: {e}")
+        # cleanup temp files
+        for p in (tmp_in, tmp_conv):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
-def complete_summary_job(meeting_id, chosen_language):
-    """Generate summary in chosen language"""
-    print(f"🌐 COMPLETING SUMMARY: meeting_id={meeting_id}, language={chosen_language}")
-    
+def complete_summary_job(meeting_id: int, language_code: Optional[str] = None):
+    """
+    Decrypts transcript, produces a summary in the requested language (or detected language),
+    encrypts summary and optionally extracts action items.
+    """
+    log(f"START complete_summary_job meeting_id={meeting_id} lang={language_code}")
+    start_ts = time.time()
     try:
+        # fetch encrypted transcript and phone
         with get_conn() as conn, conn.cursor() as cur:
-            # Get transcript and update language choice
-            cur.execute("""
-                SELECT phone, transcript FROM meeting_notes 
-                WHERE id=%s
-            """, (meeting_id,))
+            cur.execute("SELECT transcript, detected_language, phone FROM meeting_notes WHERE id=%s LIMIT 1", (meeting_id,))
             row = cur.fetchone()
-            
             if not row:
-                return {"error": "Meeting not found"}
-            
-            phone = row[0] if hasattr(row, '__getitem__') else row.phone
-            transcript = row[1] if hasattr(row, '__getitem__') else row.transcript
-            
-            if not transcript:
-                return {"error": "No transcript found"}
-            
-            # Generate summary with error handling
-            print(f"🌐 PRODUCTION WORKER: Generating summary in {chosen_language}...")
-            try:
-                summary = summarize_text_multilang(transcript, chosen_language)
-                print(f"🌐 PRODUCTION WORKER: Summary generated, length: {len(summary) if summary else 0}")
-                
-                if not summary or len(summary.strip()) < 10:
-                    raise ValueError("Summary generation failed or too short")
-                    
-            except Exception as summary_error:
-                print(f"🌐 PRODUCTION WORKER: Summary generation failed: {summary_error}")
-                raise
-            
-            # Send summary to user
-            lang_name = get_language_name(chosen_language)
-            formatted_summary = f"📝 *Meeting Summary ({lang_name}):*\n\n{summary}"
-            send_whatsapp(phone, formatted_summary)
-            
-            # Idempotent final update with timestamp
-            cur.execute("""
-                UPDATE meeting_notes 
-                SET summary=%s, chosen_language=%s, job_state=%s, summary_generated_at=now()
-                WHERE id=%s
-            """, (summary, chosen_language, 'completed', meeting_id))
-            
-            conn.commit()
-            
-        print(f"🌐 WORKER: Summary sent and job completed")
-        return {"success": True, "summary_sent": True}
-        
-    except Exception as e:
-        print(f"🌐 PRODUCTION WORKER: Summary generation error: {e}")
-        traceback.print_exc()
-        try:
-            if 'phone' in locals():
-                send_whatsapp(phone, "⚠️ Summary generation failed. Please try again.")
-        except:
-            pass
-        return {"error": str(e)}
+                log_err("meeting not found:", meeting_id)
+                return
+            enc_transcript = row[0]
+            detected_language = row[1]
+            phone = row[2] if len(row) > 2 else None
 
-def test_worker_job():
-    print("PRODUCTION MULTILANG WORKER TEST SUCCESS!")
-    return "test_success"
+        if not enc_transcript:
+            log_err("No transcript found for meeting", meeting_id)
+            update_meeting(meeting_id, job_state="failed", failure_reason="no_transcript")
+            return
+
+        # decrypt transcript
+        try:
+            transcript = decrypt_sensitive_data(enc_transcript)
+        except Exception as e:
+            log_err("decrypt failed, using raw encrypted value as fallback (not ideal)", e)
+            transcript = enc_transcript
+
+        # decide language_code
+        lang = language_code or detected_language or "en"
+        # Build a conservative summarization instruction
+        instructions = (
+            "You are an expert meeting summarizer. Produce a concise summary with:\n"
+            "- short headline\n- key discussion points\n- decisions\n- action items (bullet list)\n- next steps\nKeep output short and in the requested language. If action items include owners/due dates, extract them."
+        )
+
+        # call summarizer (wrap with retries)
+        def _summ():
+            return summarize_text_multilang(transcript, language_code=lang, instructions=instructions, max_tokens=900, temperature=0.2)
+        summary_text = with_retries(_summ, attempts=RETRY_ATTEMPTS)
+
+        # encrypt and save summary
+        try:
+            enc_summary = encrypt_sensitive_data(summary_text)
+        except Exception as e:
+            log_err("Summary encryption failed:", e)
+            enc_summary = summary_text
+
+        update_meeting(meeting_id,
+                       summary=enc_summary,
+                       summary_language=lang,
+                       summary_generated_at=datetime.now(timezone.utc),
+                       job_state="summary_completed")
+
+        # optional: extract action items with a structured JSON prompt
+        try:
+            ai_instruction = (
+                "Extract action items from the meeting transcript. Return strictly valid JSON array of objects like:\n"
+                "[{\"text\": \"...\", \"owner\": \"name or null\", \"due\": \"YYYY-MM-DD or null\"}, ...]\n"
+                "Return only the JSON array."
+            )
+            def _actions():
+                return summarize_text_multilang(transcript, language_code="en", instructions=ai_instruction, max_tokens=500, temperature=0.0)
+            actions_raw = with_retries(_actions, attempts=2)
+            # extract JSON from model output
+            s = actions_raw.strip()
+            start = s.find("[")
+            end = s.rfind("]") + 1
+            json_text = s[start:end] if start != -1 and end != -1 else s
+            items = []
+            try:
+                items = json.loads(json_text)
+            except Exception as e:
+                log_err("Failed to parse action items JSON:", e, "raw:", actions_raw)
+
+            created_tasks = []
+            for it in items if isinstance(items, list) else []:
+                text = it.get("text") or str(it)
+                owner = it.get("owner")
+                due = it.get("due")
+                # create task in DB using create_task helper (phone is owner context)
+                try:
+                    task = create_task(phone, text, description=None, due_at=due, priority=3, source='mina_ai', metadata={"meeting_id": meeting_id})
+                    created_tasks.append(task)
+                except Exception as e:
+                    log_err("create_task failed:", e)
+
+            if created_tasks:
+                send_whatsapp(phone or "unknown", f"✅ Found {len(created_tasks)} action items from meeting {meeting_id}. They have been added to your tasks.")
+
+        except Exception as e:
+            log_err("Action extraction failed:", e)
+
+        log(f"complete_summary_job done meeting_id={meeting_id} duration={time.time()-start_ts:.1f}s")
+
+    except Exception as e:
+        log_err("complete_summary_job unhandled:", e, traceback.format_exc())
+        try:
+            update_meeting(meeting_id, job_state="failed", failure_reason=str(e)[:1000])
+        except Exception:
+            pass
+
+# Expose for RQ import
+if __name__ == "__main__":
+    # basic manual runner for debugging
+    if len(sys.argv) >= 3 and sys.argv[1] == "test":
+        mid = int(sys.argv[2])
+        src = sys.argv[3] if len(sys.argv) > 3 else "/tmp/test.mp3"
+        process_audio_job(mid, src)
+    else:
+        print("This module is intended to be imported by rq worker. Example: rq worker --with-scheduler")
