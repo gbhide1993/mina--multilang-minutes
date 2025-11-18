@@ -32,6 +32,17 @@ from language_handler_v2 import get_language_menu, parse_language_choice, get_la
 import re
 from payments import create_payment_link_for_phone, handle_webhook_event, verify_razorpay_webhook
 
+# New imports for API endpoints
+from werkzeug.utils import secure_filename
+from db import (
+    get_or_create_user, save_meeting_notes_with_sid, get_conn,
+    create_task, get_tasks_for_user, get_user_by_phone
+)
+from encryption import encrypt_sensitive_data, decrypt_sensitive_data
+from openai_client_multilang import summarize_text_multilang, transcribe_file_multilang
+import json
+
+
 # Load environment (same as original)
 load_dotenv()
 
@@ -739,6 +750,269 @@ def test_audio_format():
         }), 200
         
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# -----------------------
+# Minimal REST API layer
+# -----------------------
+
+ALLOWED_EXTENSIONS = {"m4a","mp3","wav","ogg","opus","webm","aac","3gp"}
+
+def _allowed_file(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+@app.route("/api/upload", methods=["POST"])
+def api_upload():
+    """
+    Multipart form:
+      - phone (string, normalized same as WhatsApp format recommended e.g. whatsapp:+91...)
+      - file (audio)
+      - title (optional)
+    Response: { meeting_id, status }
+    """
+    try:
+        phone = request.form.get("phone")
+        title = request.form.get("title") or ""
+        if not phone:
+            return jsonify({"error": "phone required"}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "file required"}), 400
+
+        f = request.files["file"]
+        filename = secure_filename(f.filename or f"{int(time.time())}.m4a")
+        if not _allowed_file(filename):
+            return jsonify({"error": "unsupported file type"}), 400
+
+        # Save to TEMP_DIR then pass to worker (we used TEMP_DIR earlier)
+        tmp_path = os.path.join(TEMP_DIR, f"app_upload_{int(time.time())}_{filename}")
+        f.save(tmp_path)
+
+        # Create meeting row in DB (use save_meeting_notes_with_sid to reuse schema)
+        # store audio_file as local path (or better: upload to S3 and store URL)
+        saved = save_meeting_notes_with_sid(phone, tmp_path, None, None, message_sid=None)
+        meeting_id = saved.get("id") if isinstance(saved, dict) else (saved[0] if saved else None)
+
+        # enqueue existing worker to process audio job (same worker name you use in app.py)
+        if queue:
+            queue.enqueue(
+                "worker_multilang_production_fixed_clean.process_audio_job",
+                meeting_id,
+                tmp_path,
+                job_timeout=60 * 60,
+                result_ttl=60 * 60
+            )
+            return jsonify({"meeting_id": meeting_id, "status": "processing"}), 200
+        else:
+            return jsonify({"meeting_id": meeting_id, "status": "queued_failed", "note": "queue not initialized"}), 503
+
+    except Exception as e:
+        debug_print("api_upload error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/meeting/<int:meeting_id>/transcript", methods=["GET"])
+def api_get_transcript(meeting_id):
+    """Return decrypted transcript if present"""
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT transcript FROM meeting_notes WHERE id=%s", (meeting_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "not found"}), 404
+            # handle both mapping-like and tuple-like rows
+            transcript_enc = row[0] if not hasattr(row, "get") else row.get("transcript")
+            if not transcript_enc:
+                return jsonify({"transcript": None, "status": "not_ready"}), 200
+            transcript = decrypt_sensitive_data(transcript_enc)
+            return jsonify({"transcript": transcript, "status": "ok"}), 200
+    except Exception as e:
+        debug_print("api_get_transcript error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/meeting/<int:meeting_id>/summarize", methods=["POST"])
+def api_summarize(meeting_id):
+    """
+    POST JSON body: { "language": "hi" }
+    Returns: {"summary": "..."}
+    """
+    try:
+        data = request.get_json(force=True) if request.is_json else {}
+        language = data.get("language") or LANGUAGE or "hi"
+
+        # Fetch transcript
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT transcript FROM meeting_notes WHERE id=%s", (meeting_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "meeting not found"}), 404
+            enc_transcript = row[0] if not hasattr(row, "get") else row.get("transcript")
+            if not enc_transcript:
+                return jsonify({"error": "transcript not available yet"}), 400
+            transcript = decrypt_sensitive_data(enc_transcript)
+
+        # Call your summarizer (this blocks; you may want to enqueue a worker instead)
+        summary_text = summarize_text_multilang(transcript, language_code=language, instructions="Provide a concise meeting summary with bullets, decisions and action items.")
+        # Encrypt and save summary to DB
+        enc_summary = encrypt_sensitive_data(summary_text)
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE meeting_notes SET summary=%s, chosen_language=%s, summary_generated_at=now(), job_state='completed' WHERE id=%s",
+                        (enc_summary, language, meeting_id))
+            conn.commit()
+
+        return jsonify({"summary": summary_text, "language": language}), 200
+
+    except Exception as e:
+        debug_print("api_summarize error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/meeting/<int:meeting_id>/translate", methods=["POST"])
+def api_translate(meeting_id):
+    """
+    Translate summary/transcript to requested language.
+    POST JSON: { "to": "en" }
+    """
+    try:
+        data = request.get_json(force=True) if request.is_json else {}
+        to_lang = data.get("to") or "en"
+
+        # get summary (prefer), else transcript
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT summary, transcript FROM meeting_notes WHERE id=%s", (meeting_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "not found"}), 404
+            summary_enc = row[0] if not hasattr(row, "get") else row.get("summary")
+            transcript_enc = row[1] if not hasattr(row, "get") else row.get("transcript")
+
+            source_text = None
+            if summary_enc:
+                source_text = decrypt_sensitive_data(summary_enc)
+            elif transcript_enc:
+                source_text = decrypt_sensitive_data(transcript_enc)
+            else:
+                return jsonify({"error": "no text available to translate"}), 400
+
+        # Use summarizer with translation instructions (safe re-use)
+        translation_prompt = f"Translate the following content to {to_lang} language only. Preserve names, dates and numbers.\n\n{source_text}"
+        translated = summarize_text_multilang(source_text, language_code=to_lang, instructions="Translate the text, do not add extra commentary.", max_tokens=800)
+        return jsonify({"translation": translated, "to": to_lang}), 200
+
+    except Exception as e:
+        debug_print("api_translate error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/meeting/<int:meeting_id>/actions", methods=["POST"])
+def api_extract_actions(meeting_id):
+    """
+    Extract action items from transcript and create tasks.
+    Returns: { "created_tasks": [ ... ] }
+    """
+    try:
+        # Fetch transcript
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT transcript, phone FROM meeting_notes JOIN users ON users.phone = meeting_notes.phone WHERE meeting_notes.id=%s", (meeting_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "meeting not found"}), 404
+            # handle mapping-like
+            if hasattr(row, "get"):
+                transcript_enc = row.get("transcript")
+                phone = row.get("phone")
+            else:
+                transcript_enc = row[0]
+                phone = row[1]
+
+            if not transcript_enc:
+                return jsonify({"error": "transcript not available"}), 400
+            transcript = decrypt_sensitive_data(transcript_enc)
+
+        # Ask LLM to extract action items as JSON
+        instruction = (
+            "Extract action items from the meeting transcript and return a JSON array of objects with keys: "
+            "'text' (action text), 'owner' (person or null), 'due' (YYYY-MM-DD or null). "
+            "Return strictly valid JSON only."
+        )
+        ai_resp = summarize_text_multilang(transcript, language_code="en", instructions=instruction, max_tokens=700, temperature=0.0)
+        # Try to parse JSON from ai_resp
+        try:
+            # The model sometimes returns text before/after JSON — try to extract first JSON array
+            s = ai_resp.strip()
+            start = s.find('[')
+            end = s.rfind(']') + 1
+            json_text = s[start:end] if start != -1 and end != -1 else s
+            items = json.loads(json_text)
+        except Exception:
+            # fallback: return raw AI response
+            return jsonify({"error": "failed to parse action items", "raw": ai_resp}), 500
+
+        created = []
+        # Create tasks using existing create_task helper (this associates with user via phone)
+        for it in items:
+            text = it.get("text") or it.get("action") or str(it)
+            owner = it.get("owner")
+            due = it.get("due")  # keep ISO date or None
+            # create_task(phone_or_user_id, title, description=None, due_at=None, priority=3, source='whatsapp', metadata=None, recurring_rule=None)
+            task = create_task(phone, text, description=None, due_at=due, priority=3, source='mina_ai', metadata={"meeting_id": meeting_id})
+            created.append(task)
+
+        return jsonify({"created_tasks": created}), 200
+
+    except Exception as e:
+        debug_print("api_extract_actions error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/action/<int:action_id>/reminder", methods=["POST"])
+def api_create_reminder(action_id):
+    """
+    POST JSON: { "remind_at": "2025-11-20T09:00:00+05:30" } (ISO8601)
+    Creates a reminder row tied to an action_item.
+    """
+    try:
+        data = request.get_json(force=True) if request.is_json else {}
+        remind_at = data.get("remind_at")
+        if not remind_at:
+            return jsonify({"error": "remind_at required"}), 400
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO reminders (task_id, remind_at, sent, created_at)
+                VALUES (%s, %s, false, now()) RETURNING id
+            """, (action_id, remind_at))
+            row = cur.fetchone()
+            conn.commit()
+            reminder_id = row[0] if row else None
+        return jsonify({"reminder_id": reminder_id, "status": "scheduled"}), 200
+    except Exception as e:
+        debug_print("api_create_reminder error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/history", methods=["GET"])
+def api_history():
+    """
+    Query param: phone=whatsapp:+91...
+    Returns last 50 meetings for the user (id, title, created_at, summary_exists)
+    """
+    try:
+        phone = request.args.get("phone")
+        if not phone:
+            return jsonify({"error": "phone query param required"}), 400
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT id, audio_file, summary, created_at FROM meeting_notes WHERE phone=%s ORDER BY id DESC LIMIT 50", (phone,))
+            rows = cur.fetchall()
+            normalized = []
+            for r in rows or []:
+                if hasattr(r, "get"):
+                    normalized.append({"id": r.get("id"), "audio_file": r.get("audio_file"), "summary_exists": bool(r.get("summary")), "created_at": r.get("created_at")})
+                else:
+                    normalized.append({"id": r[0], "audio_file": r[1], "summary_exists": bool(r[2]), "created_at": r[3]})
+            return jsonify({"meetings": normalized}), 200
+    except Exception as e:
+        debug_print("api_history error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
