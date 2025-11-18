@@ -812,28 +812,20 @@ def api_upload():
 
 @app.route("/api/upload", methods=["POST"])
 def _api_upload_tester():
-    # Quick debug: log some info so we can see request arrived and not be blocked by heavy logic
-    try:
-        # Log minimal metadata to stderr (shows in Render logs)
-        print(f"DEBUG: _api_upload_tester called at {time.time()}", file=sys.stderr)
-        print(f"DEBUG: Headers: {dict(request.headers)}", file=sys.stderr)
-        # note: content-length may be large; don't print body
-        cl = request.content_length
-        print(f"DEBUG: Content-Length: {cl}", file=sys.stderr)
-        # If a file was sent via form-data, report keys
-        files = list(request.files.keys())
-        form = dict(request.form)
-        print(f"DEBUG: form keys: {list(form.keys())}, files: {files}", file=sys.stderr)
+    print(f"DEBUG: _api_upload_tester called at {time.time()}", file=sys.stderr)
+    print(f"DEBUG: Headers: {dict(request.headers)}", file=sys.stderr)
+    cl = request.content_length
+    print(f"DEBUG: Content-Length: {cl}", file=sys.stderr)
+    files = list(request.files.keys())
+    form = dict(request.form)
+    print(f"DEBUG: form keys: {list(form.keys())}, files: {files}", file=sys.stderr)
 
-        return jsonify({
-            "debug": "post-test-received",
-            "content_length": cl,
-            "form_keys": list(form.keys()),
-            "files": files
-        }), 200
-    except Exception as e:
-        print("DEBUG: exception in tester:", e, file=sys.stderr)
-        return jsonify({"error": str(e)}), 500
+    return jsonify({
+        "debug": "post-test-received",
+        "content_length": cl,
+        "form_keys": list(form.keys()),
+        "files": files
+    }), 200
 # ---- END TEMP ----
 
 @app.route("/api/meeting/<int:meeting_id>/transcript", methods=["GET"])
