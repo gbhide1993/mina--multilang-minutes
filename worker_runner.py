@@ -20,7 +20,9 @@ import time
 import signal
 import logging
 from redis import Redis
-from rq import Worker, Queue, Connection
+from rq import Worker, Queue
+from rq.connections import Connection
+
 
 # Configure logging
 LOG_LEVEL = os.getenv("WORKER_LOG_LEVEL", "INFO").upper()
