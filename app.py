@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 import hashlib
 import requests
-from flask import Flask, request, jsonify, g
+from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from mutagen import File as MutagenFile
@@ -27,7 +27,7 @@ from redis import from_url
 from db_helpers import get_meeting_status, get_meeting_detail
 from google.cloud import storage
 from werkzeug.utils import secure_filename
-from auth_otp import bp as auth_otp_bp, token_required
+from auth_otp import bp as auth_otp_bp
 app.register_blueprint(auth_otp_bp)
 
 
@@ -81,6 +81,10 @@ except Exception as e:
     print("init_db() failed:", e)
 
 app = Flask(__name__)
+
+# Initialize scheduled reminders
+from scheduler_setup import init_scheduler
+init_scheduler(app)
 
 # Create temp directory for audio files
 TEMP_DIR = os.getenv("TEMP_DIR", os.getcwd())
@@ -1118,3 +1122,183 @@ if __name__ == "__main__":
         app.run(host="0.0.0.0", port=5000, debug=True)
     else:
         app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=flask_debug)
+
+
+# ===== NEW FEATURES: Voice Tasks & Scheduled Reminders =====
+
+@app.route("/api/meeting/<int:meeting_id>/extract-tasks", methods=["POST"])
+def api_extract_tasks_from_voice(meeting_id):
+    """
+    Extract tasks from voice note transcript.
+    Enqueues voice task extraction job.
+    Returns: {"status": "processing", "job_id": "..."}
+    """
+    try:
+        if not queue:
+            return jsonify({"error": "queue not available"}), 503
+        
+        job = queue.enqueue(
+            "worker_multilang_production_fixed_clean.extract_tasks_from_voice_job",
+            meeting_id,
+            job_timeout=60 * 10,
+            result_ttl=60 * 60
+        )
+        
+        return jsonify({
+            "status": "processing",
+            "job_id": job.id,
+            "message": "Extracting tasks from voice note..."
+        }), 200
+    except Exception as e:
+        debug_print("api_extract_tasks_from_voice error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks", methods=["GET"])
+def api_get_tasks():
+    """
+    Query params: phone=..., status=open|done (default: open)
+    Returns user's tasks
+    """
+    try:
+        phone = request.args.get("phone")
+        status = request.args.get("status", "open")
+        if not phone:
+            return jsonify({"error": "phone required"}), 400
+        
+        user = get_user_by_phone(phone)
+        if not user:
+            return jsonify({"tasks": []}), 200
+        
+        from db import get_tasks_for_user
+        tasks = get_tasks_for_user(user['id'], status=status, limit=100)
+        return jsonify({"tasks": tasks}), 200
+    except Exception as e:
+        debug_print("api_get_tasks error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/task/<int:task_id>/complete", methods=["POST"])
+def api_complete_task(task_id):
+    """
+    Mark task as done.
+    Returns: {"status": "completed", "task": {...}}
+    """
+    try:
+        from db import mark_task_done
+        task = mark_task_done(task_id)
+        if not task:
+            return jsonify({"error": "task not found"}), 404
+        return jsonify({"status": "completed", "task": task}), 200
+    except Exception as e:
+        debug_print("api_complete_task error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reminders/send-morning", methods=["POST"])
+def api_send_morning_reminders():
+    """
+    Admin endpoint to manually trigger morning reminders.
+    Returns: {"sent": count}
+    """
+    try:
+        from scheduled_reminders import schedule_morning_reminders
+        sent = schedule_morning_reminders()
+        return jsonify({"sent": sent}), 200
+    except Exception as e:
+        debug_print("api_send_morning_reminders error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reminders/send-evening", methods=["POST"])
+def api_send_evening_summaries():
+    """
+    Admin endpoint to manually trigger evening summaries.
+    Returns: {"sent": count}
+    """
+    try:
+        from scheduled_reminders import schedule_evening_summaries
+        sent = schedule_evening_summaries()
+        return jsonify({"sent": sent}), 200
+    except Exception as e:
+        debug_print("api_send_evening_summaries error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+# ===== ADVANCED FEATURES: Interactive Task Completion =====
+
+@app.route("/api/task/complete-by-response", methods=["POST"])
+def api_complete_task_by_response():
+    """
+    Complete task based on user WhatsApp response.
+    Request: {"phone": "...", "response": "Done 1"}
+    Returns: {"success": true, "message": "..."}
+    """
+    try:
+        data = request.get_json()
+        phone = data.get("phone")
+        response = data.get("response")
+        
+        if not phone or not response:
+            return jsonify({"error": "phone and response required"}), 400
+        
+        from advanced_features import parse_task_completion_response
+        result = parse_task_completion_response(response, phone)
+        
+        if result is None:
+            return jsonify({"error": "not a task completion response"}), 400
+        
+        return jsonify(result), 200 if result['success'] else 400
+    except Exception as e:
+        debug_print("api_complete_task_by_response error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/tasks/grouped", methods=["GET"])
+def api_get_tasks_grouped():
+    """
+    Get tasks grouped by project/client.
+    Query params: phone=...
+    Returns: {"grouped": {"Project1": [...], "Project2": [...]}}
+    """
+    try:
+        phone = request.args.get("phone")
+        if not phone:
+            return jsonify({"error": "phone required"}), 400
+        
+        from advanced_features import get_tasks_grouped_by_project
+        grouped = get_tasks_grouped_by_project(phone)
+        
+        return jsonify({"grouped": grouped}), 200
+    except Exception as e:
+        debug_print("api_get_tasks_grouped error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reminders/send-checkin", methods=["POST"])
+def api_send_task_checkin():
+    """
+    Admin endpoint to manually trigger task check-in.
+    Returns: {"sent": count}
+    """
+    try:
+        from advanced_features import schedule_task_checkins
+        sent = schedule_task_checkins()
+        return jsonify({"sent": sent}), 200
+    except Exception as e:
+        debug_print("api_send_task_checkin error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reminders/send-weekly", methods=["POST"])
+def api_send_weekly_summary():
+    """
+    Admin endpoint to manually trigger weekly summary.
+    Returns: {"sent": count}
+    """
+    try:
+        from advanced_features import schedule_weekly_summaries
+        sent = schedule_weekly_summaries()
+        return jsonify({"sent": sent}), 200
+    except Exception as e:
+        debug_print("api_send_weekly_summary error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
