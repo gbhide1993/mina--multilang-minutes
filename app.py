@@ -374,6 +374,19 @@ def twilio_webhook():
                     send_whatsapp(sender, "❌ Failed to complete task. Please try again.")
                 return ("", 204)
             
+            # Skip summary option
+            if body_text.lower() in ['skip', 'no summary', 'no', 'cancel']:
+                if pending_job:
+                    try:
+                        meeting_id = pending_job['meeting_id']
+                        with get_conn() as conn, conn.cursor() as cur:
+                            cur.execute("UPDATE meeting_notes SET job_state='skipped' WHERE id=%s", (meeting_id,))
+                            conn.commit()
+                        send_whatsapp(sender, "✅ Summary skipped. Your tasks have been saved!")
+                    except Exception as e:
+                        print(f"Error skipping summary: {e}")
+                    return ("", 204)
+            
             # Language choice for pending summary
             lang_choice = parse_language_choice(body_text)
             if lang_choice and pending_job:
