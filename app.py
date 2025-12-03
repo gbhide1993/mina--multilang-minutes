@@ -326,6 +326,54 @@ def twilio_webhook():
             # Check if user has pending summary job first
             pending_job = _get_pending_summary_job(sender)
             
+            # Show tasks command - check BEFORE language parsing
+            if body_text.lower() in ['show my tasks', 'tasks', 'my tasks', 'list tasks', 'show tasks']:
+                try:
+                    from db import get_tasks_for_user, get_user_by_phone
+                    user = get_user_by_phone(sender)
+                    if not user:
+                        send_whatsapp(sender, "You don't have any tasks yet. Send a voice note to create tasks!")
+                        return ("", 204)
+                    
+                    tasks = get_tasks_for_user(user['id'], status='open', limit=20)
+                    
+                    if not tasks:
+                        send_whatsapp(sender, "✅ You have no pending tasks! Great job!")
+                    else:
+                        message = f"📋 *Your Tasks ({len(tasks)})*\n\n"
+                        for i, task in enumerate(tasks, 1):
+                            title = task.get('title', 'Untitled')
+                            due = task.get('due_at')
+                            task_id = task.get('id')
+                            
+                            if due:
+                                from datetime import datetime
+                                due_str = datetime.fromisoformat(str(due)).strftime('%b %d')
+                                message += f"{i}. {title}\n   📅 Due: {due_str} | ID: {task_id}\n\n"
+                            else:
+                                message += f"{i}. {title}\n   ID: {task_id}\n\n"
+                        
+                        message += "Reply 'Done <ID>' to complete a task"
+                        send_whatsapp(sender, message)
+                except Exception as e:
+                    print(f"Error showing tasks: {e}")
+                    send_whatsapp(sender, "❌ Failed to fetch tasks. Please try again.")
+                return ("", 204)
+            
+            # Complete task command - check BEFORE language parsing
+            if body_text.lower().startswith('done '):
+                try:
+                    from advanced_features import parse_task_completion_response
+                    result = parse_task_completion_response(body_text, sender)
+                    if result and result.get('success'):
+                        send_whatsapp(sender, result.get('message', '✅ Task completed!'))
+                    else:
+                        send_whatsapp(sender, result.get('message', '❌ Task not found') if result else '❌ Invalid format. Use: Done <task_id>')
+                except Exception as e:
+                    print(f"Error completing task: {e}")
+                    send_whatsapp(sender, "❌ Failed to complete task. Please try again.")
+                return ("", 204)
+            
             # Language choice for pending summary
             lang_choice = parse_language_choice(body_text)
             if lang_choice and pending_job:
@@ -366,54 +414,6 @@ def twilio_webhook():
                     # Show regular language menu
                     menu = get_language_menu()
                     send_whatsapp(sender, menu)
-                return ("", 204)
-            
-            # Show tasks command
-            if body_text.lower() in ['show my tasks', 'tasks', 'my tasks', 'list tasks', 'show tasks']:
-                try:
-                    from db import get_tasks_for_user, get_user_by_phone
-                    user = get_user_by_phone(sender)
-                    if not user:
-                        send_whatsapp(sender, "You don't have any tasks yet. Send a voice note to create tasks!")
-                        return ("", 204)
-                    
-                    tasks = get_tasks_for_user(user['id'], status='open', limit=20)
-                    
-                    if not tasks:
-                        send_whatsapp(sender, "✅ You have no pending tasks! Great job!")
-                    else:
-                        message = f"📋 *Your Tasks ({len(tasks)})*\n\n"
-                        for i, task in enumerate(tasks, 1):
-                            title = task.get('title', 'Untitled')
-                            due = task.get('due_at')
-                            task_id = task.get('id')
-                            
-                            if due:
-                                from datetime import datetime
-                                due_str = datetime.fromisoformat(str(due)).strftime('%b %d')
-                                message += f"{i}. {title}\n   📅 Due: {due_str} | ID: {task_id}\n\n"
-                            else:
-                                message += f"{i}. {title}\n   ID: {task_id}\n\n"
-                        
-                        message += "Reply 'Done <ID>' to complete a task"
-                        send_whatsapp(sender, message)
-                except Exception as e:
-                    print(f"Error showing tasks: {e}")
-                    send_whatsapp(sender, "❌ Failed to fetch tasks. Please try again.")
-                return ("", 204)
-            
-            # Complete task command
-            if body_text.lower().startswith('done '):
-                try:
-                    from advanced_features import parse_task_completion_response
-                    result = parse_task_completion_response(body_text, sender)
-                    if result and result.get('success'):
-                        send_whatsapp(sender, result.get('message', '✅ Task completed!'))
-                    else:
-                        send_whatsapp(sender, result.get('message', '❌ Task not found') if result else '❌ Invalid format. Use: Done <task_id>')
-                except Exception as e:
-                    print(f"Error completing task: {e}")
-                    send_whatsapp(sender, "❌ Failed to complete task. Please try again.")
                 return ("", 204)
             
             # Set user language preference (when no pending job)
