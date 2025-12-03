@@ -1,26 +1,39 @@
 # db.py (PostgreSQL version)
-import psycopg2
 from utils import normalize_phone_for_db
-from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 import os
 import json
 
-
-
-
-# Use DATABASE_URL from environment
+# Use DATABASE_URL from environment or default to local SQLite
 DB_URL = os.getenv("DATABASE_URL")
 if not DB_URL:
-    raise RuntimeError("DATABASE_URL must be set in environment (Production).")
+    # Default to local SQLite for development
+    DB_URL = "sqlite:///local_mina.db"
+    print("No DATABASE_URL found, using local SQLite database: local_mina.db")
+
+# Determine database type and import appropriate driver
+IS_POSTGRES = DB_URL.startswith('postgresql:') or DB_URL.startswith('postgres:')
+
+if IS_POSTGRES:
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        PSYCOPG_VERSION = 2
+    except ImportError:
+        import psycopg
+        from psycopg.rows import dict_row
+        PSYCOPG_VERSION = 3
 
 @contextmanager
 def get_conn():
     """
-    Yields a psycopg2 connection.
+    Yields a PostgreSQL connection.
     """
-    conn = psycopg2.connect(DB_URL)
+    if PSYCOPG_VERSION == 2:
+        conn = psycopg2.connect(DB_URL)
+    else:
+        conn = psycopg.connect(DB_URL)
     try:
         yield conn
     finally:
@@ -32,11 +45,15 @@ def get_conn():
 @contextmanager
 def get_cursor():
     """
-    Yields a cursor configured to return mapping-like rows (RealDictCursor).
+    Yields a cursor configured to return mapping-like rows.
     Commits on success, rollbacks on exception.
     """
     with get_conn() as conn:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if PSYCOPG_VERSION == 2:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+        else:
+            conn.row_factory = dict_row
+            cur = conn.cursor()
         try:
             yield cur
             conn.commit()
@@ -154,6 +171,68 @@ def init_db():
             END
             WHERE job_state IS NULL
         """)
+        
+        # Tasks table for voice-based task creation
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS tasks (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_at TIMESTAMP,
+            priority INTEGER DEFAULT 3,
+            status VARCHAR(20) DEFAULT 'open',
+            source VARCHAR(50) DEFAULT 'whatsapp',
+            metadata JSONB,
+            recurring_rule TEXT,
+            deleted BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+        
+        # Reminders table for scheduled task reminders
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS reminders (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            remind_at TIMESTAMP NOT NULL,
+            sent BOOLEAN DEFAULT FALSE,
+            sent_at TIMESTAMP,
+            attempts INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+        
+        # Task shares for team collaboration
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS task_shares (
+            id SERIAL PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            team_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            permission VARCHAR(20) DEFAULT 'view',
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+        
+        # Task tags
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS task_tags (
+            id SERIAL PRIMARY KEY,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            tag VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+        
+        # Create indexes for performance
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks(user_id, status, deleted);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_tasks_due_at ON tasks(due_at) WHERE status='open' AND deleted=false;")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_reminders_sent ON reminders(sent, remind_at);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_task_shares_task_id ON task_shares(task_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id);")
+        
         conn.commit()
 
 
