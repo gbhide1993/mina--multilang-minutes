@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 import hashlib
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, g
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from mutagen import File as MutagenFile
@@ -24,6 +24,12 @@ from utils import send_whatsapp
 from openai_client_multilang import transcribe_file_multilang, summarize_text_multilang
 from redis_conn import get_redis_conn_or_raise, get_queue, get_redis_url
 from redis import from_url
+from db_helpers import get_meeting_status, get_meeting_detail
+from google.cloud import storage
+from werkzeug.utils import secure_filename
+from auth_otp import bp as auth_otp_bp, token_required
+app.register_blueprint(auth_otp_bp)
+
 
 # Import DB and payments (same as original)
 from db import (init_db, get_conn, get_or_create_user, get_remaining_minutes, deduct_minutes, save_meeting_notes, save_meeting_notes_with_sid, save_user, decrement_minutes_if_available, set_subscription_active)
@@ -682,6 +688,94 @@ def test_worker():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# GET lightweight status for mobile polling
+@app.route("/api/meeting/<int:meeting_id>/status", methods=["GET"])
+def api_get_meeting_status(meeting_id):
+    """
+    Returns small payload for polling:
+    { meeting_id, status, progress, error }
+    """
+    data = get_meeting_status(meeting_id)
+    if data is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(data), 200
+
+
+# POST /api/uploads/signed-url
+# Request JSON: { "filename": "meeting_01.m4a", "content_type": "audio/m4a", "phone": "+911234..." }
+# Response: { "upload_url": "...", "object_path": "gs://bucket/..." }
+@app.route("/api/uploads/signed-url", methods=["POST"])
+def api_signed_url():
+    """
+    Returns a V4 signed URL for direct PUT upload to GCS.
+    Client must do an HTTP PUT with 'Content-Type' header to the returned upload_url.
+    After successful upload (HTTP 200/201), client should call POST /api/upload with audio_url set to object_path.
+    """
+    # Validate request
+    try:
+        data = request.get_json(force=True)
+    except Exception:
+        return jsonify({"error": "invalid_json"}), 400
+
+    filename = data.get("filename")
+    content_type = data.get("content_type", "application/octet-stream")
+    phone = data.get("phone")  # optional, but useful for pathing
+    if not filename:
+        return jsonify({"error": "filename required"}), 400
+
+    # Secure the filename to avoid path traversal
+    safe_name = secure_filename(filename)
+
+    # Bucket name must be set as environment variable
+    BUCKET_NAME = os.environ.get("GCS_BUCKET")
+    if not BUCKET_NAME:
+        return jsonify({"error": "GCS_BUCKET not configured"}), 500
+
+    # Build object path: uploads/<phone or unknown>/<timestamp>_<filename>
+    user_segment = (phone.replace(":", "").replace("+", "") if phone else "anonymous")
+    timestamp = int(time.time())
+    object_name = f"uploads/{user_segment}/{timestamp}_{safe_name}"
+    storage_client = storage.Client()
+
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(object_name)
+
+        # Signed URL expiration (in seconds) — 20 minutes recommended
+        expiration = timedelta(minutes=20)
+
+        upload_url = blob.generate_signed_url(
+            version="v4",
+            expiration=expiration,
+            method="PUT",
+            content_type=content_type,
+        )
+
+        object_path = f"gs://{BUCKET_NAME}/{object_name}"
+
+        return jsonify({
+            "upload_url": upload_url,
+            "object_path": object_path,
+            "expires_in_seconds": int(expiration.total_seconds())
+        }), 200
+
+    except Exception as e:
+        # Log error server-side; return safe message
+        print("api_signed_url error:", str(e))
+        return jsonify({"error": "failed_to_generate_signed_url", "detail": str(e)}), 500
+
+
+# GET full meeting detail for job-detail screen
+@app.route("/api/meeting/<int:meeting_id>/detail", methods=["GET"])
+def api_get_meeting_detail(meeting_id):
+    """
+    Returns meeting object with transcript and summary (if available).
+    """
+    data = get_meeting_detail(meeting_id)
+    if data is None:
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(data), 200
+
 
 @app.route("/test-whatsapp", methods=["POST"])
 def test_whatsapp():
@@ -810,23 +904,7 @@ def api_upload():
         debug_print("api_upload error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/upload", methods=["POST"])
-def _api_upload_tester():
-    print(f"DEBUG: _api_upload_tester called at {time.time()}", file=sys.stderr)
-    print(f"DEBUG: Headers: {dict(request.headers)}", file=sys.stderr)
-    cl = request.content_length
-    print(f"DEBUG: Content-Length: {cl}", file=sys.stderr)
-    files = list(request.files.keys())
-    form = dict(request.form)
-    print(f"DEBUG: form keys: {list(form.keys())}, files: {files}", file=sys.stderr)
 
-    return jsonify({
-        "debug": "post-test-received",
-        "content_length": cl,
-        "form_keys": list(form.keys()),
-        "files": files
-    }), 200
-# ---- END TEMP ----
 
 @app.route("/api/meeting/<int:meeting_id>/transcript", methods=["GET"])
 def api_get_transcript(meeting_id):
