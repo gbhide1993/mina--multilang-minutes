@@ -102,8 +102,9 @@ def send_daily_followup():
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         ist = pytz.timezone('Asia/Kolkata')
         now = datetime.now(ist)
+        yesterday = now - timedelta(days=1)
         
-        # Get users with tasks due today or overdue
+        # Get users with tasks from yesterday that are still pending
         cur.execute("""
             SELECT DISTINCT u.phone, u.id as user_id
             FROM users u
@@ -111,10 +112,10 @@ def send_daily_followup():
             WHERE t.status = 'open'
             AND t.deleted = false
             AND (
-                DATE(t.due_at) = DATE(now())
-                OR t.due_at < now()
+                DATE(t.due_at) = DATE(%s)
+                OR (t.due_at < now() AND DATE(t.due_at) >= DATE(%s))
             )
-        """)
+        """, (yesterday, yesterday))
         
         users = cur.fetchall()
         sent_count = 0
@@ -123,29 +124,48 @@ def send_daily_followup():
             phone = user['phone']
             user_id = user['user_id']
             
-            # Get their urgent tasks
+            # Get their yesterday's tasks
             cur.execute("""
-                SELECT id, title, due_at
+                SELECT id, title, due_at, COUNT(*) OVER() as total_count
                 FROM tasks
                 WHERE user_id = %s
                 AND status = 'open'
                 AND deleted = false
                 AND (
-                    DATE(due_at) = DATE(now())
-                    OR due_at < now()
+                    DATE(due_at) = DATE(%s)
+                    OR (due_at < now() AND DATE(due_at) >= DATE(%s))
                 )
                 ORDER BY due_at ASC
-                LIMIT 3
-            """, (user_id,))
+                LIMIT 5
+            """, (user_id, yesterday, yesterday))
             
             tasks = cur.fetchall()
             
             if tasks:
-                # Send follow-up for first urgent task
-                send_personal_followup(phone, dict(tasks[0]))
+                # Send gentle follow-up with all yesterday's items
+                send_yesterday_followup(phone, tasks)
                 sent_count += 1
         
         return sent_count
+
+def send_yesterday_followup(phone, tasks):
+    """Send gentle follow-up for yesterday's pending items"""
+    count = len(tasks)
+    
+    message = "💬 *Gentle follow-up on yesterday's items*\n\n"
+    
+    for i, task in enumerate(tasks[:3], 1):
+        title = task.get('title', 'Untitled')
+        task_id = task.get('id')
+        message += f"{i}. {title}\n   Reply 'Done {task_id}' to complete\n\n"
+    
+    if count > 3:
+        message += f"...and {count - 3} more\n\n"
+    
+    message += "_Sent via MinA - Your AI Assistant_"
+    
+    send_whatsapp(phone, message)
+    return True
 
 def send_weekly_scorecard():
     """Send weekly completion scorecard to all active users"""
