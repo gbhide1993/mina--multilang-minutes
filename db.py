@@ -233,6 +233,30 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_task_shares_task_id ON task_shares(task_id);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_task_tags_task_id ON task_tags(task_id);")
         
+        # Meeting bots table for live meeting transcription
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS meeting_bots (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            meeting_url TEXT NOT NULL,
+            bot_id TEXT,
+            platform VARCHAR(20),
+            status VARCHAR(20) DEFAULT 'pending',
+            transcript TEXT,
+            live_transcript TEXT,
+            summary TEXT,
+            participants JSONB,
+            recording_url TEXT,
+            started_at TIMESTAMP,
+            ended_at TIMESTAMP,
+            last_update_sent_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        """)
+        
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_bots_user_status ON meeting_bots(user_id, status);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_bots_bot_id ON meeting_bots(bot_id);")
+        
         conn.commit()
 
 
