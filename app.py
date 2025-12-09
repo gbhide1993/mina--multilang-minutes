@@ -26,6 +26,7 @@ from redis_conn import get_redis_conn_or_raise, get_queue, get_redis_url
 from redis import from_url
 from db_helpers import get_meeting_status, get_meeting_detail
 from werkzeug.utils import secure_filename
+from smart_followups import get_user_completion_score 
 
 
 # Import DB and payments (same as original)
@@ -327,7 +328,7 @@ def twilio_webhook():
             pending_job = _get_pending_summary_job(sender)
             
             # Show tasks command - check BEFORE language parsing
-            if body_text.lower() in ['show my tasks', 'tasks', 'my tasks', 'list tasks', 'show tasks']:
+            if body_text.lower() in ['show my tasks', 'show my task', 'tasks', 'task', 'my tasks', 'my task', 'list tasks', 'show tasks', 'show task']:
                 try:
                     from db import get_tasks_for_user, get_user_by_phone
                     user = get_user_by_phone(sender)
@@ -387,6 +388,41 @@ def twilio_webhook():
                         print(f"Error skipping summary: {e}")
                     return ("", 204)
             
+            # Show score command
+            if body_text.lower() in ['score', 'my score', 'show score', 'task score']:
+                try:
+                    
+                    score_data = get_user_completion_score(sender, days=7)
+                    
+                    if not score_data or score_data['total'] == 0:
+                        send_whatsapp(sender, "📊 No tasks yet! Send a voice note to get started.")
+                        return ("", 204)
+                    
+                    score = score_data['score']
+                    completed = score_data['completed']
+                    pending = score_data['pending']
+                    overdue = score_data['overdue']
+                    completion_rate = score_data['completion_rate']
+                    
+                    emoji = "🏆" if score >= 90 else "⭐" if score >= 75 else "👍" if score >= 60 else "📈" if score >= 40 else "💪"
+                    
+                    message = f"""{emoji} *Your Task Score*
+
+                    📊 Score: {score}/100
+
+                    ✅ Completed: {completed}
+                    ⏳ Pending: {pending}
+                    ⚠️ Overdue: {overdue}
+                    📈 Completion Rate: {completion_rate}%
+
+                    _Last 7 days_"""
+                    
+                    send_whatsapp(sender, message)
+                except Exception as e:
+                    print(f"Error showing score: {e}")
+                    send_whatsapp(sender, "❌ Failed to fetch score. Please try again.")
+                return ("", 204)
+
             # Language choice for pending summary
             lang_choice = parse_language_choice(body_text)
             if lang_choice and pending_job:
