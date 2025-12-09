@@ -65,7 +65,7 @@ def send_task_completion_prompt(phone):
             title = task[1]
             message += f"📌 {title}\n   Reply 'Done {task_id}' to complete\n\n"
         
-        message += "Did you complete any of these?"
+        message += "Did you complete any of these?\n\n_Sent via MinA - Your AI Assistant_"
         
         send_whatsapp(phone, message)
         print(f"✅ Task check-in sent to {phone}")
@@ -141,7 +141,7 @@ Completion Rate: {stats['completion_rate']:.0f}%
         else:
             message += "📈 Let's make next week even better!"
         
-        message += "\n\nReady to plan next week?"
+        message += "\n\nReady to plan next week?\n\n_Sent via MinA - Your AI Assistant_"
         
         send_whatsapp(phone, message)
         print(f"✅ Weekly summary sent to {phone}")
@@ -156,7 +156,7 @@ def send_grouped_morning_reminder(phone):
         grouped = get_tasks_grouped_by_project(phone)
         
         if not grouped:
-            message = "🌅 Good morning! You have no pending tasks today. Have a great day!"
+            message = "🌅 Good morning! You have no pending tasks today. Have a great day!\n\n_Sent via MinA - Your AI Assistant_"
         else:
             total = sum(len(tasks) for tasks in grouped.values())
             message = f"🌅 Good morning! You have {total} pending task{'s' if total != 1 else ''}:\n\n"
@@ -169,7 +169,7 @@ def send_grouped_morning_reminder(phone):
                     message += f"  ... and {len(tasks)-3} more\n"
                 message += "\n"
             
-            message += "Want to review them?"
+            message += "Want to review them?\n\n_Sent via MinA - Your AI Assistant_"
         
         send_whatsapp(phone, message)
         print(f"✅ Grouped morning reminder sent to {phone}")
