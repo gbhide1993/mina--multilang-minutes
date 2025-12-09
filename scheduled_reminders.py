@@ -74,11 +74,11 @@ def send_morning_reminder(phone):
         pending_count = get_pending_tasks_count(phone)
         
         if pending_count == 0:
-            message = "🌅 Good morning! You have no pending tasks today. Have a great day!"
+            message = "🌅 Good morning! You have no pending tasks today. Have a great day!\n\n_Sent via MinA - Your AI Assistant_"
         elif pending_count == 1:
-            message = "🌅 Good morning! You have 1 pending action item today.\nWant to review it?"
+            message = "🌅 Good morning! You have 1 pending action item today.\nWant to review it?\n\n_Sent via MinA - Your AI Assistant_"
         else:
-            message = f"🌅 Good morning! You have {pending_count} pending action items today.\nWant to review them?"
+            message = f"🌅 Good morning! You have {pending_count} pending action items today.\nWant to review them?\n\n_Sent via MinA - Your AI Assistant_"
         
         send_whatsapp(phone, message)
         print(f"✅ Morning reminder sent to {phone} ({pending_count} tasks)")
@@ -100,7 +100,9 @@ def send_evening_summary(phone):
 ⏳ Pending: {pending} tasks
 ⚠️ Overdue: {overdue} tasks
 
-Want me to prepare tomorrow's plan?"""
+Want me to prepare tomorrow's plan?
+
+_Sent via MinA - Your AI Assistant_"""
         
         send_whatsapp(phone, message)
         print(f"✅ Evening summary sent to {phone}")
