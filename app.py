@@ -78,7 +78,13 @@ try:
 except Exception as e:
     print("init_db() failed:", e)
 
-app = Flask(__name__)
+# Get the directory where this script is located
+import os
+script_dir = os.path.dirname(os.path.abspath(__file__))
+template_dir = os.path.join(script_dir, 'templates')
+static_dir = os.path.join(script_dir, 'static')
+
+app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 
 # Initialize scheduled reminders
 from scheduler_setup import init_scheduler
