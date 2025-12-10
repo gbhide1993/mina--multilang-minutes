@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse, unquote
 import hashlib
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from dotenv import load_dotenv
 from twilio.rest import Client as TwilioClient
 from mutagen import File as MutagenFile
@@ -700,6 +700,11 @@ def admin_get_notes(phone):
     except Exception as e:
         debug_print("admin_get_notes error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/", methods=["GET"])
+def index():
+    return render_template("index.html")
 
 
 @app.route("/health", methods=["GET"])
