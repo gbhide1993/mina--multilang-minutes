@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MinA - Your Personal AI Assistant on WhatsApp</title>
+    <meta name="description" content="MinA helps you create tasks from voice notes, get meeting transcripts, receive daily reminders, and stay organized - all on WhatsApp!">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 50px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .logo img {
+            max-width: 200px;
+            height: auto;
+        }
+        .tagline {
+            font-size: 22px;
+            color: #555;
+            text-align: center;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        .subtitle {
+            font-size: 16px;
+            color: #777;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .features {
+            margin: 40px 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+        }
+        .feature {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            transition: transform 0.2s;
+        }
+        .feature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .feature-icon {
+            font-size: 36px;
+            margin-bottom: 15px;
+            display: block;
+        }
+        .feature-text h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .feature-text p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.5;
+        }
+        .how-it-works {
+            margin: 40px 0;
+            padding: 30px;
+            background: #f0f7ff;
+            border-radius: 12px;
+        }
+        .how-it-works h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #333;
+        }
+        .steps {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .step {
+            flex: 1;
+            min-width: 200px;
+            text-align: center;
+        }
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: #25D366;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            margin: 0 auto 15px;
+        }
+        .step h3 {
+            font-size: 16px;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .step p {
+            font-size: 14px;
+            color: #666;
+        }
+        .cta {
+            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
+            color: white;
+            text-align: center;
+            padding: 40px;
+            border-radius: 15px;
+            margin-top: 40px;
+        }
+        .cta h2 {
+            font-size: 28px;
+            margin-bottom: 15px;
+        }
+        .cta p {
+            font-size: 18px;
+            margin-bottom: 20px;
+        }
+        .phone-number {
+            font-size: 32px;
+            font-weight: bold;
+            background: rgba(255,255,255,0.2);
+            padding: 15px 30px;
+            border-radius: 10px;
+            display: inline-block;
+            margin-bottom: 20px;
+        }
+        .whatsapp-btn {
+            display: inline-block;
+            background: white;
+            color: #25D366;
+            padding: 15px 40px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 18px;
+            transition: transform 0.2s;
+        }
+        .whatsapp-btn:hover {
+            transform: scale(1.05);
+        }
+        .languages {
+            text-align: center;
+            margin-top: 40px;
+            padding: 30px;
+            background: #fff9e6;
+            border-radius: 12px;
+        }
+        .languages h2 {
+            font-size: 22px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .languages p {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .lang-list {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 15px;
+        }
+        .lang-badge {
+            background: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            color: #555;
+            border: 2px solid #f0f0f0;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #eee;
+            color: #777;
+            font-size: 14px;
+        }
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px 20px;
+            }
+            .features {
+                grid-template-columns: 1fr;
+            }
+            .steps {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <img src="/static/logo.png" alt="MinA Logo">
+        </div>
+        <p class="tagline">Your Personal AI Assistant</p>
+        <p class="subtitle">No app to download. No login required. Just WhatsApp!</p>
+        
+        <div class="how-it-works">
+            <h2>🚀 How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <h3>Send Voice Note</h3>
+                    <p>Record and send your tasks or meetings via WhatsApp</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <h3>MinA Processes</h3>
+                    <p>AI extracts tasks, creates transcripts, and organizes everything</p>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <h3>Stay on Track</h3>
+                    <p>Get reminders throughout the day and track your progress</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="features">
+            <div class="feature">
+                <span class="feature-icon">🎤</span>
+                <div class="feature-text">
+                    <h3>Voice Task Creation</h3>
+                    <p>Just speak naturally - "Call John tomorrow" or "Send proposal by Friday". MinA extracts tasks automatically!</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">📝</span>
+                <div class="feature-text">
+                    <h3>Meeting Transcription</h3>
+                    <p>Record meetings and get instant transcripts with summaries, action items, and key decisions</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">⏰</span>
+                <div class="feature-text">
+                    <h3>Daily Reminders</h3>
+                    <p>Morning briefings (9 AM), midday check-ins (12 PM & 3 PM), and evening summaries (6 PM)</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">📊</span>
+                <div class="feature-text">
+                    <h3>Weekly Scorecards</h3>
+                    <p>Track your completion rate, celebrate wins, and stay motivated with gamified progress tracking</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">✅</span>
+                <div class="feature-text">
+                    <h3>Quick Task Completion</h3>
+                    <p>Reply "Done 1" to any reminder to mark tasks complete. Simple and fast!</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">🌐</span>
+                <div class="feature-text">
+                    <h3>Multi-language Support</h3>
+                    <p>Works in 9 Indian languages - Hindi, English, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="cta">
+            <h2>🎉 Start Using MinA Today!</h2>
+            <p>Send "Hi" on WhatsApp to get started</p>
+            <div class="phone-number">+1 (415) 523-8886</div>
+            <a href="https://wa.me/14155238886?text=Hi" class="whatsapp-btn" target="_blank">💬 Open WhatsApp</a>
+        </div>
+        
+        <div class="languages">
+            <h2>🌍 Speak Your Language</h2>
+            <p>MinA understands and responds in 9 Indian languages</p>
+            <div class="lang-list">
+                <span class="lang-badge">🇮🇳 English</span>
+                <span class="lang-badge">🇮🇳 हिंदी (Hindi)</span>
+                <span class="lang-badge">🇮🇳 मराठी (Marathi)</span>
+                <span class="lang-badge">🇮🇳 தமிழ் (Tamil)</span>
+                <span class="lang-badge">🇮🇳 తెలుగు (Telugu)</span>
+                <span class="lang-badge">🇮🇳 ગુજરાતી (Gujarati)</span>
+                <span class="lang-badge">🇮🇳 ಕನ್ನಡ (Kannada)</span>
+                <span class="lang-badge">🇮🇳 বাংলা (Bengali)</span>
+                <span class="lang-badge">🇮🇳 മലയാളം (Malayalam)</span>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p><strong>MinA - Your Personal AI Assistant</strong></p>
+            <p>Helping you stay organized and productive, one voice note at a time.</p>
+            <p style="margin-top: 15px;">Questions? Send "Help" to MinA on WhatsApp</p>
+        </div>
+    </div>
+</body>
+</html>
