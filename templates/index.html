@@ -194,6 +194,73 @@
             color: #555;
             border: 2px solid #f0f0f0;
         }
+        .examples-section {
+            margin: 40px 0;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 12px;
+        }
+        .examples-section h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #333;
+        }
+        .example-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .example {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 4px solid #25D366;
+        }
+        .example h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .example-content p {
+            margin-bottom: 8px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .commands-section {
+            margin: 40px 0;
+            padding: 30px;
+            background: #fff9e6;
+            border-radius: 12px;
+        }
+        .commands-section h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #333;
+        }
+        .commands-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+        }
+        .command-group {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        .command-group h4 {
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 8px;
+        }
+        .command-group ul {
+            list-style: none;
+            padding: 0;
+        }
+        .command-group li {
+            padding: 5px 0;
+            font-size: 14px;
+            color: #666;
+        }
         .footer {
             text-align: center;
             margin-top: 40px;
@@ -202,11 +269,47 @@
             color: #777;
             font-size: 14px;
         }
+        .tips-section {
+            margin: 40px 0;
+            padding: 30px;
+            background: #e8f5e8;
+            border-radius: 12px;
+        }
+        .tips-section h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #333;
+        }
+        .tips-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .tip {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .tip-icon {
+            font-size: 32px;
+            display: block;
+            margin-bottom: 10px;
+        }
+        .tip h4 {
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .tip p {
+            font-size: 14px;
+            color: #666;
+            line-height: 1.4;
+        }
         @media (max-width: 768px) {
             .container {
                 padding: 30px 20px;
             }
-            .features {
+            .features, .example-grid, .commands-grid, .tips-grid {
                 grid-template-columns: 1fr;
             }
             .steps {
@@ -249,7 +352,7 @@
                 <span class="feature-icon">🎤</span>
                 <div class="feature-text">
                     <h3>Voice Task Creation</h3>
-                    <p>Just speak naturally - "Call John tomorrow" or "Send proposal by Friday". MinA extracts tasks automatically!</p>
+                    <p>Just speak naturally - "Call John tomorrow" or "Send proposal by Friday". MinA extracts tasks automatically with dates and priorities!</p>
                 </div>
             </div>
             
@@ -257,23 +360,23 @@
                 <span class="feature-icon">📝</span>
                 <div class="feature-text">
                     <h3>Meeting Transcription</h3>
-                    <p>Record meetings and get instant transcripts with summaries, action items, and key decisions</p>
+                    <p>Record meetings and get instant transcripts with summaries, action items, key decisions, and participant tracking</p>
                 </div>
             </div>
             
             <div class="feature">
                 <span class="feature-icon">⏰</span>
                 <div class="feature-text">
-                    <h3>Daily Reminders</h3>
-                    <p>Morning briefings (9 AM), midday check-ins (12 PM & 3 PM), and evening summaries (6 PM)</p>
+                    <h3>Smart Daily Reminders</h3>
+                    <p>Morning briefings (9 AM), midday check-ins (12 PM & 3 PM), evening summaries (6 PM), and weekly progress reports</p>
                 </div>
             </div>
             
             <div class="feature">
                 <span class="feature-icon">📊</span>
                 <div class="feature-text">
-                    <h3>Weekly Scorecards</h3>
-                    <p>Track your completion rate, celebrate wins, and stay motivated with gamified progress tracking</p>
+                    <h3>Progress Tracking</h3>
+                    <p>Track completion rates, celebrate wins, get motivational messages, and optimize your productivity with detailed analytics</p>
                 </div>
             </div>
             
@@ -281,7 +384,15 @@
                 <span class="feature-icon">✅</span>
                 <div class="feature-text">
                     <h3>Quick Task Completion</h3>
-                    <p>Reply "Done 1" to any reminder to mark tasks complete. Simple and fast!</p>
+                    <p>Reply "Done 1" to any reminder to mark tasks complete. Multiple completion methods: "Complete 2", "Finished 3"</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">📁</span>
+                <div class="feature-text">
+                    <h3>Project Organization</h3>
+                    <p>Automatically groups tasks by project. Say "For Acme project, call John" and tasks get organized intelligently</p>
                 </div>
             </div>
             
@@ -290,6 +401,14 @@
                 <div class="feature-text">
                     <h3>Multi-language Support</h3>
                     <p>Works in 9 Indian languages - Hindi, English, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam</p>
+                </div>
+            </div>
+            
+            <div class="feature">
+                <span class="feature-icon">🔒</span>
+                <div class="feature-text">
+                    <h3>Privacy & Security</h3>
+                    <p>Encrypted data storage, secure processing via OpenAI, no permanent audio storage, never shares your data</p>
                 </div>
             </div>
         </div>
@@ -301,9 +420,68 @@
             <a href="https://wa.me/14155238886?text=Hi" class="whatsapp-btn" target="_blank">💬 Open WhatsApp</a>
         </div>
         
+        <div class="examples-section">
+            <h2>💬 Real Examples</h2>
+            <div class="example-grid">
+                <div class="example">
+                    <h4>🎤 Voice Task Creation</h4>
+                    <div class="example-content">
+                        <p><strong>You say:</strong> "Remind me to call John tomorrow"</p>
+                        <p><strong>MinA creates:</strong><br>
+                        ✅ Task: "Call John"<br>
+                        📅 Due: Tomorrow<br>
+                        🔔 Priority: Normal</p>
+                    </div>
+                </div>
+                
+                <div class="example">
+                    <h4>📝 Meeting Summary</h4>
+                    <div class="example-content">
+                        <p><strong>You send:</strong> 45-minute meeting recording</p>
+                        <p><strong>MinA replies:</strong><br>
+                        📝 Meeting Summary with discussion points, action items, and decisions</p>
+                    </div>
+                </div>
+                
+                <div class="example">
+                    <h4>⏰ Daily Reminders</h4>
+                    <div class="example-content">
+                        <p><strong>9 AM:</strong> "🌅 Good morning! You have 5 pending tasks"</p>
+                        <p><strong>12 PM:</strong> "⏰ Midday Check-In - Reply 'Done 1' to complete"</p>
+                        <p><strong>6 PM:</strong> "📊 Your Day Summary - ✅ Completed: 4 tasks"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="commands-section">
+            <h2>💬 Common Commands</h2>
+            <div class="commands-grid">
+                <div class="command-group">
+                    <h4>📋 Task Management</h4>
+                    <ul>
+                        <li>"Show my tasks" → View all tasks</li>
+                        <li>"Show pending tasks" → View open tasks</li>
+                        <li>"Done 1" → Mark task 1 complete</li>
+                        <li>"Complete 2" → Mark task 2 complete</li>
+                    </ul>
+                </div>
+                
+                <div class="command-group">
+                    <h4>⚙️ Settings</h4>
+                    <ul>
+                        <li>"Language" → Change language</li>
+                        <li>"Help" → Get help</li>
+                        <li>"Privacy" → View privacy policy</li>
+                        <li>"Score" → View your progress</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
         <div class="languages">
             <h2>🌍 Speak Your Language</h2>
-            <p>MinA understands and responds in 9 Indian languages</p>
+            <p>MinA understands and responds in 9 Indian languages. Send "Language" to change anytime!</p>
             <div class="lang-list">
                 <span class="lang-badge">🇮🇳 English</span>
                 <span class="lang-badge">🇮🇳 हिंदी (Hindi)</span>
@@ -317,10 +495,37 @@
             </div>
         </div>
         
+        <div class="tips-section">
+            <h2>💡 Pro Tips</h2>
+            <div class="tips-grid">
+                <div class="tip">
+                    <span class="tip-icon">🎤</span>
+                    <h4>Be Natural with Voice</h4>
+                    <p>Say "Call John tomorrow about Acme project" instead of "Task: Call John. Due: Tomorrow"</p>
+                </div>
+                <div class="tip">
+                    <span class="tip-icon">📁</span>
+                    <h4>Use Project Names</h4>
+                    <p>Mention project names and MinA will group tasks automatically</p>
+                </div>
+                <div class="tip">
+                    <span class="tip-icon">⏰</span>
+                    <h4>Specify Deadlines</h4>
+                    <p>Use "tomorrow", "Friday", "next Monday", "in 3 days" for clear due dates</p>
+                </div>
+                <div class="tip">
+                    <span class="tip-icon">✅</span>
+                    <h4>Quick Completion</h4>
+                    <p>"Done 1" is the fastest way to mark tasks complete</p>
+                </div>
+            </div>
+        </div>
+        
         <div class="footer">
             <p><strong>MinA - Your Personal AI Assistant</strong></p>
             <p>Helping you stay organized and productive, one voice note at a time.</p>
-            <p style="margin-top: 15px;">Questions? Send "Help" to MinA on WhatsApp</p>
+            <p style="margin-top: 15px;">🚀 <strong>Ready to get started?</strong> Send "Hi" to MinA now!</p>
+            <p>Questions? Send "Help" to MinA on WhatsApp</p>
         </div>
     </div>
 </body>
