@@ -1,532 +1,464 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MinA - Your Personal AI Assistant on WhatsApp</title>
-    <meta name="description" content="MinA helps you create tasks from voice notes, get meeting transcripts, receive daily reminders, and stay organized - all on WhatsApp!">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            padding: 50px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        .logo {
-            text-align: center;
-            margin-bottom: 20px;
-        }
-        .logo img {
-            max-width: 200px;
-            height: auto;
-        }
-        .tagline {
-            font-size: 22px;
-            color: #555;
-            text-align: center;
-            margin-bottom: 15px;
-            font-weight: 600;
-        }
-        .subtitle {
-            font-size: 16px;
-            color: #777;
-            text-align: center;
-            margin-bottom: 40px;
-        }
-        .features {
-            margin: 40px 0;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 25px;
-        }
-        .feature {
-            background: #f8f9fa;
-            padding: 25px;
-            border-radius: 12px;
-            transition: transform 0.2s;
-        }
-        .feature:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-        .feature-icon {
-            font-size: 36px;
-            margin-bottom: 15px;
-            display: block;
-        }
-        .feature-text h3 {
-            font-size: 18px;
-            margin-bottom: 8px;
-            color: #333;
-        }
-        .feature-text p {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.5;
-        }
-        .how-it-works {
-            margin: 40px 0;
-            padding: 30px;
-            background: #f0f7ff;
-            border-radius: 12px;
-        }
-        .how-it-works h2 {
-            text-align: center;
-            margin-bottom: 25px;
-            color: #333;
-        }
-        .steps {
-            display: flex;
-            justify-content: space-around;
-            flex-wrap: wrap;
-            gap: 20px;
-        }
-        .step {
-            flex: 1;
-            min-width: 200px;
-            text-align: center;
-        }
-        .step-number {
-            width: 50px;
-            height: 50px;
-            background: #25D366;
-            color: white;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            font-weight: bold;
-            margin: 0 auto 15px;
-        }
-        .step h3 {
-            font-size: 16px;
-            margin-bottom: 8px;
-            color: #333;
-        }
-        .step p {
-            font-size: 14px;
-            color: #666;
-        }
-        .cta {
-            background: linear-gradient(135deg, #25D366 0%, #128C7E 100%);
-            color: white;
-            text-align: center;
-            padding: 40px;
-            border-radius: 15px;
-            margin-top: 40px;
-        }
-        .cta h2 {
-            font-size: 28px;
-            margin-bottom: 15px;
-        }
-        .cta p {
-            font-size: 18px;
-            margin-bottom: 20px;
-        }
-        .phone-number {
-            font-size: 32px;
-            font-weight: bold;
-            background: rgba(255,255,255,0.2);
-            padding: 15px 30px;
-            border-radius: 10px;
-            display: inline-block;
-            margin-bottom: 20px;
-        }
-        .whatsapp-btn {
-            display: inline-block;
-            background: white;
-            color: #25D366;
-            padding: 15px 40px;
-            border-radius: 50px;
-            text-decoration: none;
-            font-weight: bold;
-            font-size: 18px;
-            transition: transform 0.2s;
-        }
-        .whatsapp-btn:hover {
-            transform: scale(1.05);
-        }
-        .languages {
-            text-align: center;
-            margin-top: 40px;
-            padding: 30px;
-            background: #fff9e6;
-            border-radius: 12px;
-        }
-        .languages h2 {
-            font-size: 22px;
-            margin-bottom: 15px;
-            color: #333;
-        }
-        .languages p {
-            font-size: 16px;
-            color: #666;
-            margin-bottom: 20px;
-        }
-        .lang-list {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 12px;
-            margin-top: 15px;
-        }
-        .lang-badge {
-            background: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 14px;
-            color: #555;
-            border: 2px solid #f0f0f0;
-        }
-        .examples-section {
-            margin: 40px 0;
-            padding: 30px;
-            background: #f8f9fa;
-            border-radius: 12px;
-        }
-        .examples-section h2 {
-            text-align: center;
-            margin-bottom: 25px;
-            color: #333;
-        }
-        .example-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-        }
-        .example {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            border-left: 4px solid #25D366;
-        }
-        .example h4 {
-            margin-bottom: 10px;
-            color: #333;
-        }
-        .example-content p {
-            margin-bottom: 8px;
-            font-size: 14px;
-            line-height: 1.4;
-        }
-        .commands-section {
-            margin: 40px 0;
-            padding: 30px;
-            background: #fff9e6;
-            border-radius: 12px;
-        }
-        .commands-section h2 {
-            text-align: center;
-            margin-bottom: 25px;
-            color: #333;
-        }
-        .commands-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 25px;
-        }
-        .command-group {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        .command-group h4 {
-            margin-bottom: 15px;
-            color: #333;
-            border-bottom: 2px solid #f0f0f0;
-            padding-bottom: 8px;
-        }
-        .command-group ul {
-            list-style: none;
-            padding: 0;
-        }
-        .command-group li {
-            padding: 5px 0;
-            font-size: 14px;
-            color: #666;
-        }
-        .footer {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 30px;
-            border-top: 2px solid #eee;
-            color: #777;
-            font-size: 14px;
-        }
-        .tips-section {
-            margin: 40px 0;
-            padding: 30px;
-            background: #e8f5e8;
-            border-radius: 12px;
-        }
-        .tips-section h2 {
-            text-align: center;
-            margin-bottom: 25px;
-            color: #333;
-        }
-        .tips-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-        }
-        .tip {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            text-align: center;
-        }
-        .tip-icon {
-            font-size: 32px;
-            display: block;
-            margin-bottom: 10px;
-        }
-        .tip h4 {
-            margin-bottom: 8px;
-            color: #333;
-        }
-        .tip p {
-            font-size: 14px;
-            color: #666;
-            line-height: 1.4;
-        }
-        @media (max-width: 768px) {
-            .container {
-                padding: 30px 20px;
-            }
-            .features, .example-grid, .commands-grid, .tips-grid {
-                grid-template-columns: 1fr;
-            }
-            .steps {
-                flex-direction: column;
-            }
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MinA — Meeting intelligence, tasks & follow-ups on WhatsApp</title>
+  <meta name="description" content="MinA captures voice notes & meetings on WhatsApp, creates transcripts, action items and automated follow-ups. Enterprise-ready, privacy-first, India-language support." />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#06121a;
+      --muted:#9fb0bd;
+      --accent-1:#06c6b4;
+      --accent-2:#ffcc55;
+      --card: rgba(255,255,255,0.03);
+      --glass-border: rgba(255,255,255,0.04);
+      --maxw:1200px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
+      color:#eaf6f3;
+      background:
+        radial-gradient(900px 400px at 8% 10%, rgba(6,198,180,0.035), transparent 8%),
+        radial-gradient(700px 350px at 92% 94%, rgba(255,204,85,0.02), transparent 10%),
+        linear-gradient(180deg,#04111a 0%, #061825 100%);
+      -webkit-font-smoothing:antialiased;
+      -moz-osx-font-smoothing:grayscale;
+      padding:36px;
+      display:flex;
+      justify-content:center;
+    }
+    .container{width:100%;max-width:var(--maxw)}
+    header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:18px}
+    .brand{display:flex;gap:12px;align-items:center;text-decoration:none;color:inherit}
+    .brand img{width:64px;height:64px;border-radius:12px;padding:6px;background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);box-shadow:0 10px 30px rgba(2,6,10,0.6)}
+    .brand .title{font-weight:800;font-size:18px}
+    .nav{display:flex;gap:10px;align-items:center}
+    .link{color:var(--muted);text-decoration:none;padding:8px 10px;border-radius:8px}
+    .cta{background:linear-gradient(90deg,var(--accent-1),var(--accent-2));color:#062329;padding:10px 14px;border-radius:12px;font-weight:700;text-decoration:none;box-shadow:0 10px 30px rgba(6,198,180,0.12)}
+
+    /* layout */
+    .hero{display:grid;grid-template-columns:1fr 420px;gap:24px;align-items:start}
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);padding:22px;border-radius:16px;border:1px solid var(--glass-border);box-shadow:0 12px 40px rgba(2,8,15,0.6)}
+    .kicker{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,0.02);color:var(--muted);font-weight:700;font-size:13px;margin-bottom:12px}
+    h1{font-size:36px;margin:6px 0 12px;color:#fff;line-height:1.03}
+    p.lead{color:var(--muted);margin:0 0 16px;max-width:680px}
+
+    .hero-cta{display:flex;gap:12px;flex-wrap:wrap}
+    .stats{display:flex;gap:12px;margin-top:16px;color:var(--muted);font-weight:700}
+    .pill{display:inline-flex;align-items:center;gap:10px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,0.02);border:1px solid var(--glass-border);font-size:13px;color:var(--muted)}
+
+    /* features */
+    .features{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+    .feature h3{margin:0 0 8px 0}
+    .feature p{margin:0;color:var(--muted);font-size:13px}
+
+    /* right column */
+    .right .phone{font-weight:800;font-size:18px;color:#fff}
+    .right .small{color:var(--muted);font-size:13px}
+    .right .list{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+
+    /* examples, commands, faq */
+    section{margin-top:22px}
+    .section-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px;align-items:start}
+    .examples .example{background:rgba(255,255,255,0.02);padding:14px;border-radius:12px;border:1px solid var(--glass-border);margin-bottom:12px}
+    .commands, .faq, .languages, .tips{background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);padding:16px;border-radius:12px;border:1px solid var(--glass-border)}
+
+    .commands ul, .faq ul{color:var(--muted);line-height:1.6}
+    .faq h4{margin:8px 0}
+    .language-list{display:flex;flex-wrap:wrap;gap:8px}
+    .lang-badge{background:rgba(255,255,255,0.02);padding:6px 10px;border-radius:999px;border:1px solid var(--glass-border);color:var(--muted);font-size:13px}
+
+    /* comparison & pricing */
+    .matrix{margin-top:18px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,0.03)}
+    .matrix table{width:100%;border-collapse:collapse}
+    .matrix th,.matrix td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.02);text-align:left}
+    .matrix thead th{background:rgba(255,255,255,0.02);color:#fff}
+
+    .pricing{display:flex;gap:12px;margin-top:14px;flex-wrap:wrap}
+    .price-card{flex:1;min-width:220px;padding:16px;border-radius:12px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.01)}
+
+    /* testimonials */
+    .testimonials{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+    .test {padding:14px;border-radius:12px;background:rgba(255,255,255,0.01);border:1px solid var(--glass-border);color:var(--muted)}
+
+    /* footer */
+    footer{margin-top:30px;color:var(--muted);display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px solid rgba(255,255,255,0.02);padding-top:16px}
+
+    @media (max-width:1024px){ .hero{grid-template-columns:1fr} .features{grid-template-columns:repeat(2,1fr)} .section-grid{grid-template-columns:1fr} .testimonials{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width:700px){ .features{grid-template-columns:1fr} .testimonials{grid-template-columns:1fr} .nav{display:none} header{align-items:flex-start;flex-direction:column;gap:8px} }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <div class="logo">
-            <img src="/static/logo.png" alt="MinA Logo">
+  <div class="container">
+    <!-- NAV -->
+    <header>
+      <a class="brand" href="#">
+        <img src="static/logo.png" alt="MinA logo">
+        <div>
+          <div class="title">MinA</div>
+          <div class="sub" style="color:var(--muted);font-size:13px">WhatsApp-first meeting intelligence</div>
         </div>
-        <p class="tagline">Your Personal AI Assistant</p>
-        <p class="subtitle">No app to download. No login required. Just WhatsApp!</p>
-        
-        <div class="how-it-works">
-            <h2>🚀 How It Works</h2>
-            <div class="steps">
-                <div class="step">
-                    <div class="step-number">1</div>
-                    <h3>Send Voice Note</h3>
-                    <p>Record and send your tasks or meetings via WhatsApp</p>
-                </div>
-                <div class="step">
-                    <div class="step-number">2</div>
-                    <h3>MinA Processes</h3>
-                    <p>AI extracts tasks, creates transcripts, and organizes everything</p>
-                </div>
-                <div class="step">
-                    <div class="step-number">3</div>
-                    <h3>Stay on Track</h3>
-                    <p>Get reminders throughout the day and track your progress</p>
-                </div>
-            </div>
+      </a>
+
+      <nav class="nav">
+        <a class="link" href="#features">Features</a>
+        <a class="link" href="#examples">Examples</a>
+        <a class="link" href="#faq">FAQ</a>
+        <a class="link" href="#pricing">Pricing</a>
+        <a class="cta" href="https://wa.me/12545365395?text=Hi" target="_blank">Try on WhatsApp</a>
+      </nav>
+    </header>
+
+    <!-- HERO -->
+    <div class="hero">
+      <div class="card">
+        <div class="kicker">No app. No login. Just WhatsApp.</div>
+        <h1>Transcribe meetings, extract action items, and automate follow-ups — from WhatsApp.</h1>
+        <p class="lead">
+          MinA turns voice notes and meeting links into searchable transcripts, task lists and scheduled nudges — enterprise controls, strong privacy and 9 Indian languages supported. Start with WhatsApp and get productive instantly. :contentReference[oaicite:3]{index=3}
+        </p>
+
+        <div class="hero-cta">
+          <a class="cta" href="https://wa.me/12545365395?text=Hi" target="_blank">Start on WhatsApp</a>
+          <a class="link" href="#how">How it works</a>
+          <a class="link" href="#examples">See examples</a>
         </div>
-        
-        <div class="features">
-            <div class="feature">
-                <span class="feature-icon">🎤</span>
-                <div class="feature-text">
-                    <h3>Voice Task Creation</h3>
-                    <p>Just speak naturally - "Call John tomorrow" or "Send proposal by Friday". MinA extracts tasks automatically with dates and priorities!</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">📝</span>
-                <div class="feature-text">
-                    <h3>Meeting Transcription</h3>
-                    <p>Record meetings and get instant transcripts with summaries, action items, key decisions, and participant tracking</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">⏰</span>
-                <div class="feature-text">
-                    <h3>Smart Daily Reminders</h3>
-                    <p>Morning briefings (9 AM), midday check-ins (12 PM & 3 PM), evening summaries (6 PM), and weekly progress reports</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">📊</span>
-                <div class="feature-text">
-                    <h3>Progress Tracking</h3>
-                    <p>Track completion rates, celebrate wins, get motivational messages, and optimize your productivity with detailed analytics</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">✅</span>
-                <div class="feature-text">
-                    <h3>Quick Task Completion</h3>
-                    <p>Reply "Done 1" to any reminder to mark tasks complete. Multiple completion methods: "Complete 2", "Finished 3"</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">📁</span>
-                <div class="feature-text">
-                    <h3>Project Organization</h3>
-                    <p>Automatically groups tasks by project. Say "For Acme project, call John" and tasks get organized intelligently</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">🌐</span>
-                <div class="feature-text">
-                    <h3>Multi-language Support</h3>
-                    <p>Works in 9 Indian languages - Hindi, English, Tamil, Telugu, Bengali, Marathi, Gujarati, Kannada, Malayalam</p>
-                </div>
-            </div>
-            
-            <div class="feature">
-                <span class="feature-icon">🔒</span>
-                <div class="feature-text">
-                    <h3>Privacy & Security</h3>
-                    <p>Encrypted data storage, secure processing via OpenAI, no permanent audio storage, never shares your data</p>
-                </div>
-            </div>
+
+        <div class="stats" aria-hidden="true">
+          <div class="pill">🌐 9 Indian languages</div>
+          <div class="pill">⚡ Zero setup</div>
+          <div class="pill">🔒 Privacy-first</div>
         </div>
-        
-        <div class="cta">
-            <h2>🎉 Start Using MinA Today!</h2>
-            <p>Send "Hi" on WhatsApp to get started</p>
-            <div class="phone-number">+1 (254) 536-5395</div>
-            <a href="https://wa.me/12545365395?text=Hi" class="whatsapp-btn" target="_blank">💬 Open WhatsApp</a>
+
+        <!-- Features -->
+        <div class="features" id="features">
+          <div class="feature card">
+            <h3>🎤 Voice → Tasks</h3>
+            <p>Speak naturally on WhatsApp — MinA extracts tasks, dates, priorities and projects automatically. Examples included below. :contentReference[oaicite:4]{index=4}</p>
+          </div>
+
+          <div class="feature card">
+            <h3>📝 Meetings & live transcripts</h3>
+            <p>Send meeting links (Google Meet/Zoom/Teams) — MinA joins and sends live highlights and a final summary with action items. :contentReference[oaicite:5]{index=5}</p>
+          </div>
+
+          <div class="feature card">
+            <h3>⏰ Smart follow-ups</h3>
+            <p>Configurable nudges (9am, 10am personal follow-ups, 12pm/3pm check-ins, 6pm summary, weekly scorecards). Optimised for habit formation. :contentReference[oaicite:6]{index=6}</p>
+          </div>
         </div>
-        
-        <div class="examples-section">
-            <h2>💬 Real Examples</h2>
-            <div class="example-grid">
-                <div class="example">
-                    <h4>🎤 Voice Task Creation</h4>
-                    <div class="example-content">
-                        <p><strong>You say:</strong> "Remind me to call John tomorrow"</p>
-                        <p><strong>MinA creates:</strong><br>
-                        ✅ Task: "Call John"<br>
-                        📅 Due: Tomorrow<br>
-                        🔔 Priority: Normal</p>
-                    </div>
-                </div>
-                
-                <div class="example">
-                    <h4>📝 Meeting Summary</h4>
-                    <div class="example-content">
-                        <p><strong>You send:</strong> 45-minute meeting recording</p>
-                        <p><strong>MinA replies:</strong><br>
-                        📝 Meeting Summary with discussion points, action items, and decisions</p>
-                    </div>
-                </div>
-                
-                <div class="example">
-                    <h4>⏰ Daily Reminders</h4>
-                    <div class="example-content">
-                        <p><strong>9 AM:</strong> "🌅 Good morning! You have 5 pending tasks"</p>
-                        <p><strong>12 PM:</strong> "⏰ Midday Check-In - Reply 'Done 1' to complete"</p>
-                        <p><strong>6 PM:</strong> "📊 Your Day Summary - ✅ Completed: 4 tasks"</p>
-                    </div>
-                </div>
-            </div>
+      </div>
+
+      <!-- right column -->
+      <aside class="card right">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-size:13px;color:var(--muted)">Get started</div>
+            <div class="phone">+1 254 536 5395</div>
+            <div class="small">Open WhatsApp → Send "Hi"</div>
+          </div>
+          <div style="text-align:right">
+            <div class="pill">Free tier</div>
+            <div style="height:8px"></div>
+            <div class="pill">Enterprise-ready</div>
+          </div>
         </div>
-        
-        <div class="commands-section">
-            <h2>💬 Common Commands</h2>
-            <div class="commands-grid">
-                <div class="command-group">
-                    <h4>📋 Task Management</h4>
-                    <ul>
-                        <li>"Show my tasks" → View all tasks</li>
-                        <li>"Show pending tasks" → View open tasks</li>
-                        <li>"Done 1" → Mark task 1 complete</li>
-                        <li>"Complete 2" → Mark task 2 complete</li>
-                    </ul>
-                </div>
-                
-                <div class="command-group">
-                    <h4>⚙️ Settings</h4>
-                    <ul>
-                        <li>"Language" → Change language</li>
-                        <li>"Help" → Get help</li>
-                        <li>"Privacy" → View privacy policy</li>
-                        <li>"Score" → View your progress</li>
-                    </ul>
-                </div>
-            </div>
+
+        <hr style="border:none;height:1px;background:rgba(255,255,255,0.02);margin:12px 0;border-radius:2px">
+
+        <div>
+          <div style="font-size:13px;color:var(--muted)">Integrations</div>
+          <div class="list" style="margin-top:8px">
+            <div class="pill">Google Meet</div>
+            <div class="pill">Zoom</div>
+            <div class="pill">Microsoft Teams</div>
+            <div class="pill">Slack</div>
+            <div class="pill">Google Calendar</div>
+          </div>
         </div>
-        
-        <div class="languages">
-            <h2>🌍 Speak Your Language</h2>
-            <p>MinA understands and responds in 9 Indian languages. Send "Language" to change anytime!</p>
-            <div class="lang-list">
-                <span class="lang-badge">🇮🇳 English</span>
-                <span class="lang-badge">🇮🇳 हिंदी (Hindi)</span>
-                <span class="lang-badge">🇮🇳 मराठी (Marathi)</span>
-                <span class="lang-badge">🇮🇳 தமிழ் (Tamil)</span>
-                <span class="lang-badge">🇮🇳 తెలుగు (Telugu)</span>
-                <span class="lang-badge">🇮🇳 ગુજરાતી (Gujarati)</span>
-                <span class="lang-badge">🇮🇳 ಕನ್ನಡ (Kannada)</span>
-                <span class="lang-badge">🇮🇳 বাংলা (Bengali)</span>
-                <span class="lang-badge">🇮🇳 മലയാളം (Malayalam)</span>
-            </div>
+
+        <div style="margin-top:12px">
+          <div style="font-size:13px;color:var(--muted)">Key commands</div>
+          <div style="margin-top:8px;font-weight:700">"Show my tasks" · "Done 1" · "Score" · "Language"</div>
+          <div style="color:var(--muted);font-size:13px;margin-top:8px">Send "Help" for quick reference or "Privacy" for security details. :contentReference[oaicite:7]{index=7}</div>
         </div>
-        
-        <div class="tips-section">
-            <h2>💡 Pro Tips</h2>
-            <div class="tips-grid">
-                <div class="tip">
-                    <span class="tip-icon">🎤</span>
-                    <h4>Be Natural with Voice</h4>
-                    <p>Say "Call John tomorrow about Acme project" instead of "Task: Call John. Due: Tomorrow"</p>
-                </div>
-                <div class="tip">
-                    <span class="tip-icon">📁</span>
-                    <h4>Use Project Names</h4>
-                    <p>Mention project names and MinA will group tasks automatically</p>
-                </div>
-                <div class="tip">
-                    <span class="tip-icon">⏰</span>
-                    <h4>Specify Deadlines</h4>
-                    <p>Use "tomorrow", "Friday", "next Monday", "in 3 days" for clear due dates</p>
-                </div>
-                <div class="tip">
-                    <span class="tip-icon">✅</span>
-                    <h4>Quick Completion</h4>
-                    <p>"Done 1" is the fastest way to mark tasks complete</p>
-                </div>
-            </div>
-        </div>
-        
-        <div class="footer">
-            <p><strong>MinA - Your Personal AI Assistant</strong></p>
-            <p>Helping you stay organized and productive, one voice note at a time.</p>
-            <p style="margin-top: 15px;">🚀 <strong>Ready to get started?</strong> Send "Hi" to MinA now!</p>
-            <p>Questions? Send "Help" to MinA on WhatsApp</p>
-        </div>
+
+        <a class="cta" href="https://wa.me/12545365395?text=Hi" style="display:block;margin-top:12px;text-align:center" target="_blank">Open WhatsApp</a>
+      </aside>
     </div>
+
+    <!-- HOW IT WORKS + EXAMPLES -->
+    <section id="how" class="card">
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
+        <div style="flex:1;min-width:360px">
+          <h3 style="margin-top:0">How MinA works — simple flow</h3>
+          <ol style="color:var(--muted);line-height:1.6;margin-top:12px">
+            <li><strong>Send</strong> a voice note or meeting link on WhatsApp. MinA detects meeting URLs first. :contentReference[oaicite:8]{index=8}</li>
+            <li><strong>Process</strong>: transcription → extract tasks, owners, deadlines → group by project. :contentReference[oaicite:9]{index=9}</li>
+            <li><strong>Deliver</strong>: action items, reminders, live highlights and weekly scorecards. :contentReference[oaicite:10]{index=10}</li>
+          </ol>
+
+          <div style="margin-top:16px" id="examples">
+            <h4>Real examples (copied from the user manual)</h4>
+
+            <div class="examples" style="margin-top:8px">
+              <div class="example">
+                <strong>Voice Task — Simple</strong>
+                <p style="color:var(--muted);margin:8px 0">You say: "Remind me to call John tomorrow"</p>
+                <p style="margin:0">MinA creates: <br>✅ Task: "Call John" • 📅 Due: Tomorrow • 🔔 Priority: Normal</p>
+              </div>
+
+              <div class="example">
+                <strong>Voice Task — Multiple</strong>
+                <p style="color:var(--muted);margin:8px 0">You say: "Call the client tomorrow, send the proposal by Friday, and schedule a meeting for next Monday"</p>
+                <p style="margin:0">MinA creates 3 tasks with proper due dates and confirms them in chat. :contentReference[oaicite:11]{index=11}</p>
+              </div>
+
+              <div class="example">
+                <strong>Project-based task</strong>
+                <p style="color:var(--muted);margin:8px 0">You say: "For the Acme project, I need to call John and send the contract"</p>
+                <p style="margin:0">MinA groups both tasks under "Acme Project". :contentReference[oaicite:12]{index=12}</p>
+              </div>
+
+              <div class="example" style="margin-top:10px">
+                <strong>Meeting transcription</strong>
+                <p style="color:var(--muted);margin:8px 0">You send: 45-minute meeting recording or a meeting link</p>
+                <p style="margin:0">MinA replies with transcript, summary, decisions and action items. Live updates every 5 minutes when joining via Recall.ai. :contentReference[oaicite:13]{index=13}</p>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div style="width:320px;min-width:260px">
+          <div style="padding:12px;border-radius:12px;background:rgba(255,255,255,0.01);border:1px solid var(--glass-border)">
+            <h4 style="margin:0">Quick start (Day 1)</h4>
+            <ol style="color:var(--muted);margin-top:10px;line-height:1.6">
+              <li>Save MinA: <strong>+1 254 536 5395</strong></li>
+              <li>Open WhatsApp and send: <strong>"Hi"</strong></li>
+              <li>Choose your language and send the first voice note. MinA will guide you. :contentReference[oaicite:14]{index=14}</li>
+            </ol>
+            <a class="cta" href="https://wa.me/12545365395?text=Hi" target="_blank" style="display:block;margin-top:12px;text-align:center">Start on WhatsApp</a>
+          </div>
+
+          <div style="margin-top:12px;padding:12px;border-radius:12px;background:rgba(255,255,255,0.01);border:1px solid var(--glass-border)">
+            <h4 style="margin:0">Scheduler & follow-ups (what you get)</h4>
+            <ul style="color:var(--muted);margin-top:8px;line-height:1.6">
+              <li>9 AM — Morning brief</li>
+              <li>10 AM — Personal follow-ups (urgent tasks)</li>
+              <li>12 PM & 3 PM — Check-ins</li>
+              <li>6 PM — Evening summary</li>
+              <li>Sunday 8 PM — Weekly summary</li>
+              <li>Sunday 9 PM — Weekly scorecard (gamified). :contentReference[oaicite:15]{index=15}</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMMANDS / LANGUAGES / TIPS / STATS -->
+    <section class="card section-grid">
+      <div>
+        <h3 style="margin-top:0">Commands & Quick Reference</h3>
+        <div class="commands" style="margin-top:12px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px">
+              <h4>Task management</h4>
+              <ul>
+                <li><strong>Show my tasks</strong> → View all tasks</li>
+                <li><strong>Show pending tasks</strong> → View open tasks</li>
+                <li><strong>Done &lt;ID&gt;</strong> → Mark task complete (e.g., "Done 1")</li>
+                <li><strong>Complete &lt;ID&gt;</strong> / <strong>Finished &lt;ID&gt;</strong> → Also works</li>
+                <li><strong>Delete &lt;ID&gt;</strong> → Delete a task</li>
+              </ul>
+            </div>
+
+            <div style="flex:1;min-width:220px">
+              <h4>Settings & helpers</h4>
+              <ul>
+                <li><strong>Language</strong> → Change language</li>
+                <li><strong>Score</strong> → View weekly completion score</li>
+                <li><strong>Help</strong> → Get help</li>
+                <li><strong>Privacy</strong> → View privacy & data options</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px" id="languages">
+          <h4>Languages supported</h4>
+          <div class="language-list" style="margin-top:8px">
+            <span class="lang-badge">English</span>
+            <span class="lang-badge">हिंदी (Hindi)</span>
+            <span class="lang-badge">मराठी (Marathi)</span>
+            <span class="lang-badge">தமிழ் (Tamil)</span>
+            <span class="lang-badge">తెలుగు (Telugu)</span>
+            <span class="lang-badge">বাংলা (Bengali)</span>
+            <span class="lang-badge">ગુજરાતી (Gujarati)</span>
+            <span class="lang-badge">ಕನ್ನಡ (Kannada)</span>
+            <span class="lang-badge">മലയാളം (Malayalam)</span>
+          </div>
+          <div style="color:var(--muted);font-size:13px;margin-top:8px">Send "Language" and reply with the number to change language. :contentReference[oaicite:16]{index=16}</div>
+        </div>
+
+        <div style="margin-top:12px" class="tips">
+          <h4>Pro tips</h4>
+          <ul style="color:var(--muted);line-height:1.6">
+            <li>Be natural: "Call John tomorrow about the Acme project" (MinA parses project & action). :contentReference[oaicite:17]{index=17}</li>
+            <li>Use project names for grouping.</li>
+            <li>Use "tomorrow", "Friday", "next Monday", "in 3 days" for clear due dates. :contentReference[oaicite:18]{index=18}</li>
+            <li>Respond to check-ins (12 PM/3 PM) to keep the task list fresh.</li>
+          </ul>
+        </div>
+      </div>
+
+      <aside>
+        <h4 style="margin-top:0">Daily & Weekly stats</h4>
+        <div style="background:rgba(255,255,255,0.01);padding:12px;border-radius:10px;border:1px solid var(--glass-border);color:var(--muted)">
+          <div><strong>6 PM — Daily Summary</strong></div>
+          <div style="margin-top:8px">✅ Completed • ⏳ Pending • ⚠️ Overdue</div>
+          <hr style="border:none;height:1px;background:rgba(255,255,255,0.02);margin:10px 0">
+          <div><strong>Sunday 8 PM — Weekly Summary</strong></div>
+          <div style="margin-top:8px;color:var(--muted)">Completed, Created, Pending and Completion Rate — plus a motivational message. :contentReference[oaicite:19]{index=19}</div>
+        </div>
+
+        <div style="margin-top:12px;padding:12px;border-radius:10px;background:rgba(255,255,255,0.01);border:1px solid var(--glass-border)">
+          <h4 style="margin:0">Support</h4>
+          <div style="color:var(--muted);margin-top:8px">Need help? Send <strong>"Help"</strong> on WhatsApp or contact us at <strong>+1 254 536 5395</strong>. :contentReference[oaicite:20]{index=20}</div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- COMPARISON MATRIX -->
+    <section class="card" id="compare" style="margin-top:18px">
+      <h3 style="margin-top:0">Compare — why MinA vs Otter / Fireflies</h3>
+      <div class="matrix" style="margin-top:12px">
+        <table>
+          <thead>
+            <tr><th>Feature</th><th>MinA</th><th>Otter.ai</th><th>Fireflies</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>WhatsApp-first (no new app)</td><td>✔️</td><td>❌</td><td>❌</td></tr>
+            <tr><td>Auto-join meetings via link</td><td>✔️</td><td>✔️</td><td>✔️</td></tr>
+            <tr><td>Action-item extraction & scheduling</td><td>✔️ (automated)</td><td>Partial</td><td>Partial</td></tr>
+            <tr><td>Indian language transcription</td><td>9 languages</td><td>Limited</td><td>Limited</td></tr>
+            <tr><td>Follow-up automation & nudges</td><td>✔️ (configurable)</td><td>Limited</td><td>Limited</td></tr>
+            <tr><td>Enterprise controls (retention, roles)</td><td>✔️</td><td>✔️</td><td>✔️</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="color:var(--muted);margin-top:10px">MinA is tailored for teams that don't want another app — low friction, strong language coverage and automated follow-ups. :contentReference[oaicite:21]{index=21}</div>
+    </section>
+
+    <!-- PRICING -->
+    <section id="pricing" class="card" style="margin-top:18px">
+      <h3 style="margin-top:0">Pricing</h3>
+      <div class="pricing">
+        <div class="price-card">
+          <h4 style="margin:0">Free</h4>
+          <div style="font-size:20px;font-weight:800;margin-top:8px">₹0 <small style="font-weight:600;color:var(--muted)">/ month</small></div>
+          <p style="color:var(--muted);margin-top:8px">Up to 5 meetings/month • Basic tasks • WhatsApp support</p>
+          <a class="cta" href="https://wa.me/12545365395?text=Hi" target="_blank">Get started — Free</a>
+        </div>
+
+        <div class="price-card" style="border:2px solid rgba(6,198,180,0.06);box-shadow:0 14px 40px rgba(6,198,180,0.05)">
+          <h4 style="margin:0">Pro</h4>
+          <div style="font-size:20px;font-weight:800;margin-top:8px">₹999 <small style="font-weight:600;color:var(--muted)">/ month</small></div>
+          <p style="color:var(--muted);margin-top:8px">Unlimited meetings • Priority processing • Custom follow-ups • Export & integrations</p>
+          <a class="cta" href="https://wa.me/12545365395?text=Hi" target="_blank">Start Pro</a>
+        </div>
+
+        <div class="price-card">
+          <h4 style="margin:0">Enterprise</h4>
+          <div style="margin-top:8px;font-weight:700">Custom</div>
+          <p style="color:var(--muted);margin-top:8px">SAML, data residency, SLAs, dedicated onboarding — contact us for custom SLAs and pricing.</p>
+          <a class="link" href="#contact">Contact sales</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- TESTIMONIALS -->
+    <section class="card" style="margin-top:18px">
+      <h3 style="margin-top:0">What early users say</h3>
+      <div class="testimonials">
+        <div class="test">
+          <strong>Rajesh — Entrepreneur</strong>
+          <div style="margin-top:8px;color:var(--muted)">"MinA helped me manage 50+ tasks per week. My productivity increased by 80%!" :contentReference[oaicite:22]{index=22}</div>
+        </div>
+        <div class="test">
+          <strong>Priya — Project Manager</strong>
+          <div style="margin-top:8px;color:var(--muted)">'The voice task creation is a game changer — no more typing.'</div>
+        </div>
+        <div class="test">
+          <strong>Amit — Sales</strong>
+          <div style="margin-top:8px;color:var(--muted)">"Daily reminders mean I never miss follow-ups anymore."</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ (full from user manual) -->
+    <section id="faq" class="card" style="margin-top:18px">
+      <h3 style="margin-top:0">Frequently asked questions</h3>
+      <div style="margin-top:10px;color:var(--muted);line-height:1.6">
+        <h4>Q: How do I create a task?</h4>
+        <p>Send a voice note describing the action — MinA extracts tasks automatically. Example: "Remind me to call John tomorrow". :contentReference[oaicite:23]{index=23}</p>
+
+        <h4>Q: How do I mark a task complete?</h4>
+        <p>Reply "Done &lt;ID&gt;" (e.g., "Done 1") or "Complete &lt;ID&gt;".</p>
+
+        <h4>Q: Can I see my tasks?</h4>
+        <p>Send "Show my tasks" anytime to list pending items. :contentReference[oaicite:24]{index=24}</p>
+
+        <h4>Q: What if I miss a reminder?</h4>
+        <p>MinA sends reminders at 9 AM, 12 PM, 3 PM and 6 PM IST. Missed reminders do not remove tasks — use "Show my tasks" to recover. :contentReference[oaicite:25]{index=25}</p>
+
+        <h4>Q: Can I change reminder times?</h4>
+        <p>Currently the scheduled times are fixed (9 AM, 12 PM, 3 PM, 6 PM) and follow-up times described in the Scheduler section. :contentReference[oaicite:26]{index=26}</p>
+
+        <h4>Q: Is my data safe?</h4>
+        <p>MinA processes audio securely, stores transcripts for delivery only, uses encryption and does not share data with third parties. Send "Privacy" for details. :contentReference[oaicite:27]{index=27}</p>
+
+        <h4>Q: Supported meeting platforms?</h4>
+        <p>Google Meet, Zoom and Microsoft Teams are supported for auto-join and live capture. :contentReference[oaicite:28]{index=28}</p>
+
+        <h4>Q: How much does MinA cost?</h4>
+        <p>Simple tiers (Free / Pro / Enterprise) — see pricing section above. Contact sales for enterprise pricing.</p>
+      </div>
+    </section>
+
+    <!-- CONTACT / CTA -->
+    <section class="card" style="margin-top:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+      <div>
+        <h3 style="margin:0">Ready to try MinA?</h3>
+        <p style="color:var(--muted);margin-top:8px">Message <strong>+1 254 536 5395</strong> on WhatsApp with "Hi" and MinA will onboard you instantly.</p>
+      </div>
+      <div style="text-align:right">
+        <a class="cta" href="https://wa.me/12545365395?text=Hi" target="_blank">💬 Open WhatsApp</a>
+        <div style="color:var(--muted);margin-top:8px;font-size:13px">Prefer email? contact@mina.ai (example)</div>
+      </div>
+    </section>
+
+    <footer>
+      <div>© MinA — Built for busy teams. <span style="color:var(--muted)">Privacy-first • India-ready</span></div>
+      <div style="display:flex;gap:12px;align-items:center">
+        <a class="link" href="#faq">FAQ</a>
+        <a class="link" href="#pricing">Pricing</a>
+        <a class="link" href="#contact">Contact</a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // small entrance animation
+    document.querySelectorAll('.card, header').forEach((el, i) => {
+      el.style.opacity = 0;
+      setTimeout(()=>{ el.style.transition = 'all .5s ease'; el.style.opacity = 1; el.style.transform = 'translateY(0)'; }, 60 + i*30);
+    });
+  </script>
 </body>
 </html>
