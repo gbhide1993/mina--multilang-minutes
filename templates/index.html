@@ -8,100 +8,119 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root{
-      --cyan: #00BFD8;
-      --green: #7AD18B;
+      --cyan:#00BFD8; --green:#7AD18B;
       --cta-grad: linear-gradient(90deg,var(--cyan),var(--green));
-      --muted: #555;
-      --text: #052927;
-      --white: #ffffff;
-      --radius: 12px;
-      --shadow-light: 0 4px 12px rgba(0,0,0,0.06);
-      --maxw:1280px;
-      --container-pad: 40px;
-      --phone-frame-bg: #f8faf8;
-      --phone-border: rgba(0,0,0,0.06);
+      --muted:#555; --text:#052927; --white:#fff;
+      --radius:12px; --shadow:0 4px 12px rgba(0,0,0,0.06);
+      --maxw:1280px; --pad:40px;
+      --frame-bg: #f8faf8; --frame-border: rgba(0,0,0,0.06);
     }
 
-    /* Reset & base */
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
-      margin:0;
-      background: #fff;
-      color:var(--text);
+      margin:0; background:#fff; color:var(--text);
       font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial;
-      -webkit-font-smoothing:antialiased;
-      -moz-osx-font-smoothing:grayscale;
-      font-size:18px;
-      line-height:1.6;
-      padding:var(--container-pad);
-      display:flex;
-      justify-content:center;
+      -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+      font-size:18px; line-height:1.6; padding:var(--pad); display:flex; justify-content:center;
     }
-
     .wrap{width:100%;max-width:var(--maxw);}
 
-    /* Header */
     header{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:8px 0 28px 0}
     .brand{display:flex;align-items:center;gap:14px;text-decoration:none;color:inherit}
-    .brand img{height:52px;width:auto;display:block}
-    .brand .name{font-weight:800;font-size:20px;margin:0}
-    .brand .tag{font-size:13px;color:var(--muted);margin-top:2px}
-
+    .brand img{height:52px;width:auto}
     nav{display:flex;gap:12px;align-items:center}
     nav a{color:var(--muted);text-decoration:none;padding:8px 12px;border-radius:8px;font-size:15px}
-    .btn-cta{
-      display:inline-block;
-      background:var(--cta-grad);
-      color:#052927;
-      padding:12px 18px;
-      border-radius:10px;
-      font-weight:800;
-      text-decoration:none;
-      transition:transform .18s ease;
-      border:none;
-    }
+    .btn-cta{display:inline-block;background:var(--cta-grad);color:#052927;padding:12px 18px;border-radius:10px;font-weight:800;text-decoration:none;transition:transform .18s ease}
     .btn-cta:hover{transform:translateY(-2px)}
 
-    /* HERO: center minimal */
-    .hero{
-      display:grid;
-      grid-template-columns:1fr 440px;
-      gap:40px;
-      align-items:start;
-      padding:28px 0;
-    }
-
+    /* hero */
+    .hero{display:grid;grid-template-columns:1fr 440px;gap:40px;align-items:start;padding:28px 0}
     .hero-left{text-align:center}
     .product-name{font-size:56px;line-height:1;margin:0;font-weight:800;opacity:0;transform:translateY(8px);animation:fadeUp .6s ease .06s forwards}
     .hero-tag{font-size:18px;font-weight:300;color:var(--muted);margin-top:10px;opacity:0;transform:translateY(8px);animation:fadeUp .6s ease .12s forwards}
     .hero-sub{max-width:720px;margin:22px auto 0;color:var(--muted);font-size:18px}
     .hero-cta{margin-top:26px;opacity:0;transform:translateY(8px);animation:fadeUp .6s ease .18s forwards}
 
-    .phone{font-weight:800;font-size:18px}
-    .meta{color:var(--muted);font-size:14px;margin-top:6px}
-
-    /* Right column: demo top, screenshots below */
     .right-col{display:flex;flex-direction:column;gap:14px}
-    .demo-thumb{position:relative;border-radius:12px;overflow:hidden;border:1px solid var(--phone-border);background:var(--phone-frame-bg);height:240px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .demo-thumb{position:relative;border-radius:14px;overflow:hidden;border:1px solid var(--frame-border);background:var(--frame-bg);height:240px;display:flex;align-items:center;justify-content:center;cursor:pointer}
     .demo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
     .play-overlay{position:absolute;left:18px;top:18px;background:var(--cta-grad);padding:10px 14px;border-radius:10px;font-weight:800;color:#052927;box-shadow:0 8px 24px rgba(0,0,0,0.08)}
 
-    .screenshot-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
-    .phone-frame{background:var(--phone-frame-bg);border-radius:12px;padding:10px;border:1px solid var(--phone-border);display:flex;align-items:center;justify-content:center;height:150px}
-    .phone-frame img{width:100%;height:100%;object-fit:cover;border-radius:8px;display:block}
+    /* phone frame (pure CSS with notch) */
+    .iphone-frame{
+      width:100%;
+      height:150px;
+      border-radius:28px;
+      padding:10px;
+      background:var(--frame-bg);
+      border:1px solid var(--frame-border);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow:var(--shadow);
+      position:relative;
+      overflow:visible;
+      transition:transform .18s ease;
+    }
+    .iphone-frame:hover{transform:translateY(-6px)}
+    .iphone-screen{
+      width:100%;
+      height:100%;
+      border-radius:14px;
+      overflow:hidden;
+      background:#000;
+      display:block;
+      position:relative;
+    }
+    .iphone-screen img{width:100%;height:100%;object-fit:cover;display:block}
 
-    /* Features grid minimal */
+    /* top notch decoration (SVG inline via pseudo element) */
+    .iphone-frame::before{
+      content:"";
+      position:absolute;
+      top:-8px;
+      left:50%;
+      transform:translateX(-50%);
+      width:160px;
+      height:28px;
+      background:transparent;
+      pointer-events:none;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="28" viewBox="0 0 160 28"><rect rx="14" ry="14" width="160" height="28" fill="%23ffffff" opacity="0.85"/></svg>');
+      filter: drop-shadow(0 2px 6px rgba(0,0,0,0.06));
+      border-radius:14px;
+      z-index:3;
+    }
+
+    /* small speaker & camera dots as overlay */
+    .iphone-frame .notch-elements{
+      position:absolute;
+      top: -2px;
+      left:50%;
+      transform:translateX(-50%);
+      width:160px;
+      height:28px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      pointer-events:none;
+      z-index:4;
+    }
+    .speaker{
+      width:36px;height:6px;border-radius:6px;background:#111;opacity:0.12;margin-right:8px;
+    }
+    .camera-dot{
+      width:8px;height:8px;border-radius:50%;background:#222;opacity:0.12;
+    }
+
+    /* features and layout */
     .section{margin-top:40px}
     .feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
-    .feature{background:transparent;border-radius:12px;padding:18px;border:1px solid rgba(0,0,0,0.04);display:flex;gap:14px;align-items:center;transition:transform .18s ease}
-    .feature:hover{transform:translateY(-4px)}
+    .feature{border-radius:12px;padding:18px;border:1px solid rgba(0,0,0,0.04);display:flex;gap:14px;align-items:center}
     .icon{width:56px;height:56px;border-radius:12px;background:linear-gradient(90deg,var(--cyan),var(--green));display:flex;align-items:center;justify-content:center;font-weight:800;color:#052927;font-size:22px}
-
     .feature h3{margin:0;font-size:20px}
     .feature p{margin:6px 0 0 0;color:var(--muted);font-size:16px}
 
-    /* Storytelling screenshots (full width flow) */
     .story{display:grid;grid-template-columns:1fr;gap:18px;margin-top:36px;align-items:center}
     .scene{display:flex;gap:18px;align-items:center}
     .scene .shot{flex:1;max-width:420px}
@@ -109,74 +128,53 @@
     .scene .text h4{margin:0 0 8px 0;font-size:24px}
     .scene .text p{margin:0;color:var(--muted)}
 
-    /* Compare grid (3 cards) */
     .compare-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:28px}
-    .cmp-card{background:var(--white);border-radius:12px;padding:18px;border:1px solid rgba(0,0,0,0.04);box-shadow:var(--shadow-light)}
+    .cmp-card{background:var(--white);border-radius:12px;padding:18px;border:1px solid rgba(0,0,0,0.04);box-shadow:var(--shadow)}
     .cmp-card h4{margin:0 0 10px 0;font-size:20px}
     .cmp-item{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(0,0,0,0.03);color:var(--muted);font-size:15px}
     .cmp-item:first-of-type{border-top:none;padding-top:0}
 
-    /* Multilingual chips */
     .lang-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
     .chip{padding:8px 10px;border-radius:999px;border:1px solid rgba(0,0,0,0.04);background:#fff;color:var(--muted);font-weight:700}
 
-    /* Testimonials */
     .test-grid{display:flex;gap:12px;margin-top:22px;flex-wrap:wrap}
-    .test{background:var(--white);padding:16px;border-radius:12px;border:1px solid rgba(0,0,0,0.04);box-shadow:var(--shadow-light);min-width:220px}
+    .test{background:var(--white);padding:16px;border-radius:12px;border:1px solid rgba(0,0,0,0.04);box-shadow:var(--shadow);min-width:220px}
 
-    /* Pricing */
-    .pricing{display:flex;justify-content:center;margin-top:28px}
-    .price-card{background:var(--white);padding:22px;border-radius:12px;border:1px solid rgba(0,0,0,0.04);box-shadow:var(--shadow-light);text-align:center;min-width:280px}
+    .price-card{background:var(--white);padding:22px;border-radius:12px;border:1px solid rgba(0,0,0,0.04);box-shadow:var(--shadow);text-align:center;min-width:280px}
     .price{font-size:28px;font-weight:800;margin-top:6px}
 
-    /* Big CTA */
-    .big-cta{margin-top:36px;text-align:center}
-    .big-cta h3{font-size:22px;margin:0}
-    .big-cta .btn{margin-top:12px}
-
-    /* Footer */
-    footer{margin-top:44px;display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;padding-bottom:10px}
-
-    /* Sticky WhatsApp CTA */
-    .sticky-wa{position:fixed;right:18px;bottom:18px;background:var(--cta-grad);padding:12px 16px;border-radius:14px;color:#052927;font-weight:800;text-decoration:none;z-index:9999;box-shadow:none;transition:transform .18s ease}
-    .sticky-wa:hover{transform:translateY(-3px)}
-
-    /* FAQ accordion */
     .accordion{margin-top:12px}
     .acc-item{border-bottom:1px solid rgba(0,0,0,0.04);padding:12px 0}
     .acc-q{display:flex;justify-content:space-between;cursor:pointer;font-weight:700}
     .acc-a{margin-top:8px;color:var(--muted);display:none}
 
-    /* responsive */
+    footer{margin-top:44px;display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:14px;padding-bottom:10px}
+
+    .sticky-wa{position:fixed;right:18px;bottom:18px;background:var(--cta-grad);padding:12px 16px;border-radius:14px;color:#052927;font-weight:800;text-decoration:none;z-index:9999;transition:transform .18s ease}
+    .sticky-wa:hover{transform:translateY(-3px)}
+
     @media (max-width:1100px){
       .hero{grid-template-columns:1fr}
       .feature-grid{grid-template-columns:repeat(1,1fr)}
       .compare-grid{grid-template-columns:1fr}
-      .screenshot-grid{grid-template-columns:1fr 1fr}
-      .demo-thumb{height:200px}
     }
     @media (max-width:640px){
-      .screenshot-grid{grid-template-columns:1fr}
       nav{display:none}
       header{flex-direction:column;align-items:flex-start;gap:12px}
       .product-name{font-size:40px}
     }
 
-    /* Animations */
-    @keyframes fadeUp {
-      to{opacity:1;transform:translateY(0)}
-    }
+    @keyframes fadeUp{ to{opacity:1;transform:translateY(0)} }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <!-- Header -->
     <header>
       <a class="brand" href="#">
         <img src="./static/logo.png" alt="MinA logo">
         <div>
-          <div class="name">MinA</div>
-          <div class="tag">WhatsApp-first meeting intelligence</div>
+          <div style="font-weight:800;font-size:20px">MinA</div>
+          <div style="font-size:13px;color:var(--muted)">WhatsApp-first meeting intelligence</div>
         </div>
       </a>
 
@@ -189,7 +187,6 @@
       </nav>
     </header>
 
-    <!-- HERO -->
     <section class="hero" id="hero" aria-label="Hero">
       <div class="hero-left">
         <h1 class="product-name">Your meetings. Transcribed. Organized. Done.</h1>
@@ -202,26 +199,18 @@
 
         <div class="lang-row" style="justify-content:center;margin-top:18px">
           <div style="font-weight:700;color:var(--muted);margin-right:8px;display:flex;align-items:center">Supports:</div>
-          <div class="chip">हिंदी</div>
-          <div class="chip">मराठी</div>
-          <div class="chip">தமிழ்</div>
-          <div class="chip">తెలుగు</div>
-          <div class="chip">বাংলা</div>
-          <div class="chip">ગુજરાતી</div>
-          <div class="chip">ಕನ್ನಡ</div>
-          <div class="chip">ਪੰਜਾਬੀ</div>
-          <div class="chip">English</div>
+          <div class="chip">हिंदी</div><div class="chip">मराठी</div><div class="chip">தமிழ்</div><div class="chip">తెలుగు</div><div class="chip">বাংলা</div><div class="chip">ગુજરાતી</div><div class="chip">ಕನ್ನಡ</div><div class="chip">ਪੰਜਾਬੀ</div><div class="chip">English</div>
         </div>
       </div>
 
       <aside class="right-col">
-        <!-- Demo thumbnail at top (kept visible and prominent) -->
+        <!-- Demo thumbnail -->
         <div class="demo-thumb" id="demoThumb" role="button" aria-label="Play demo">
           <img src="./static/mina_ss_4.png" alt="Demo thumbnail">
           <div class="play-overlay">▶ Watch demo</div>
         </div>
 
-        <!-- Screenshot grid below the demo -->
+        <!-- screenshots in iPhone frames -->
         <div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center">
             <div>
@@ -235,11 +224,26 @@
             </div>
           </div>
 
-          <div class="screenshot-grid" style="margin-top:12px">
-            <div class="phone-frame"><img src="./static/mina_ss_1.png" alt="WhatsApp screenshot 1"></div>
-            <div class="phone-frame"><img src="./static/mina_ss_2.png" alt="WhatsApp screenshot 2"></div>
-            <div class="phone-frame"><img src="./static/mina_ss_3.png" alt="WhatsApp screenshot 3"></div>
-            <div class="phone-frame"><img src="./static/mina_ss_4.png" alt="WhatsApp screenshot 4"></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+            <div class="iphone-frame">
+              <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+              <div class="iphone-screen"><img src="./static/mina_ss_1.png" alt="Screenshot 1"></div>
+            </div>
+
+            <div class="iphone-frame">
+              <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+              <div class="iphone-screen"><img src="./static/mina_ss_2.png" alt="Screenshot 2"></div>
+            </div>
+
+            <div class="iphone-frame">
+              <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+              <div class="iphone-screen"><img src="./static/mina_ss_3.png" alt="Screenshot 3"></div>
+            </div>
+
+            <div class="iphone-frame">
+              <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+              <div class="iphone-screen"><img src="./static/mina_ss_4.png" alt="Screenshot 4"></div>
+            </div>
           </div>
 
           <a class="btn-cta" href="https://wa.me/12545365395?text=Hi%20MinA%20—%20I%20saw%20the%20demo%20and%20want%20a%20demo" style="display:block;text-align:center;margin-top:12px" target="_blank">Message on WhatsApp</a>
@@ -247,171 +251,95 @@
       </aside>
     </section>
 
-    <!-- Features -->
     <section id="features" class="section">
       <div style="font-weight:800;font-size:22px;margin-bottom:12px">What MinA does</div>
       <div class="feature-grid">
-        <div class="feature">
-          <div class="icon">🎤</div>
-          <div>
-            <h3>Voice → Tasks</h3>
-            <p>Speak on WhatsApp and MinA creates tasks with owners & due dates — instantly.</p>
-          </div>
-        </div>
-
-        <div class="feature">
-          <div class="icon">📝</div>
-          <div>
-            <h3>Meeting capture</h3>
-            <p>Auto-join Meet/Zoom/Teams and provide live highlights, transcript and summary.</p>
-          </div>
-        </div>
-
-        <div class="feature">
-          <div class="icon">⏰</div>
-          <div>
-            <h3>Smart follow-ups</h3>
-            <p>Scheduled nudges and weekly scorecards that increase task completion.</p>
-          </div>
-        </div>
+        <div class="feature"><div class="icon">🎤</div><div><h3>Voice → Tasks</h3><p>Speak on WhatsApp and MinA creates tasks with owners & due dates — instantly.</p></div></div>
+        <div class="feature"><div class="icon">📝</div><div><h3>Meeting capture</h3><p>Auto-join Meet/Zoom/Teams and provide live highlights, transcript and summary.</p></div></div>
+        <div class="feature"><div class="icon">⏰</div><div><h3>Smart follow-ups</h3><p>Scheduled nudges and weekly scorecards that increase task completion.</p></div></div>
       </div>
     </section>
 
-    <!-- Storytelling screenshots (flow) -->
     <section id="story" class="section">
       <div style="font-weight:800;font-size:22px;margin-bottom:12px">See MinA in your workflow</div>
-
       <div class="story">
         <div class="scene">
-          <div class="shot poster"><img src="./static/mina_ss_4.png" alt="WhatsApp onboarding" style="width:100%;border-radius:8px"></div>
-          <div class="text">
-            <h4>Works where your team already works</h4>
-            <p>Send a voice note on WhatsApp — MinA transcribes, identifies action items, and confirms assignments right in chat.</p>
+          <div class="shot poster iphone-frame" style="max-width:420px">
+            <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+            <div class="iphone-screen"><img src="./static/mina_ss_4.png" alt="WhatsApp onboarding"></div>
+          </div>
+          <div class="text"><h4>Works where your team already works</h4><p>Send a voice note on WhatsApp — MinA transcribes, identifies action items, and confirms assignments right in chat.</p></div>
+        </div>
+
+        <div class="scene">
+          <div class="text"><h4>Automatic summaries & next steps</h4><p>MinA returns clear next steps and "Next meeting" placeholders so nothing is missed.</p></div>
+          <div class="shot poster iphone-frame" style="max-width:420px">
+            <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+            <div class="iphone-screen"><img src="./static/mina_ss_2.png" alt="Action items"></div>
           </div>
         </div>
 
         <div class="scene">
-          <div class="text">
-            <h4>Automatic summaries & next steps</h4>
-            <p>MinA returns clear next steps and "Next meeting" placeholders so nothing is missed.</p>
+          <div class="shot poster iphone-frame" style="max-width:420px">
+            <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+            <div class="iphone-screen"><img src="./static/mina_ss_3.png" alt="Language selection"></div>
           </div>
-          <div class="shot poster"><img src="./static/mina_ss_2.png" alt="Action items & next steps" style="width:100%;border-radius:8px"></div>
+          <div class="text"><h4>Multi-language support</h4><p>Choose summary language — MinA supports 9 Indian languages plus English.</p></div>
         </div>
 
         <div class="scene">
-          <div class="shot poster"><img src="./static/mina_ss_3.png" alt="Language selection" style="width:100%;border-radius:8px"></div>
-          <div class="text">
-            <h4>Multi-language support</h4>
-            <p>Choose summary language — MinA supports 9 Indian languages plus English.</p>
+          <div class="text"><h4>Secure & compliant</h4><p>Audio is processed securely and retention is configurable. Users confirm consent in chat.</p></div>
+          <div class="shot poster iphone-frame" style="max-width:420px">
+            <div class="notch-elements"><div class="speaker"></div><div class="camera-dot"></div></div>
+            <div class="iphone-screen"><img src="./static/mina_ss_1.png" alt="Privacy"></div>
           </div>
-        </div>
-
-        <div class="scene">
-          <div class="text">
-            <h4>Secure & Compliant</h4>
-            <p>Audio is processed securely with AES-256 encryption and retention is configurable. Users confirm consent in chat.</p>
-          </div>
-          <div class="shot poster"><img src="./static/mina_ss_1.png" alt="Privacy & encryption" style="width:100%;border-radius:8px"></div>
         </div>
       </div>
     </section>
 
-    <!-- Compare -->
     <section id="compare" class="section">
       <div style="font-weight:800;font-size:22px;margin-bottom:12px">Compare at a glance</div>
       <div class="compare-grid">
-        <div class="cmp-card">
-          <h4>MinA</h4>
-          <div class="cmp-item"><div>WhatsApp-first</div><div style="color:var(--green);font-weight:800">✔</div></div>
-          <div class="cmp-item"><div>Action extraction & scheduling</div><div style="color:var(--green);font-weight:800">✔</div></div>
-          <div class="cmp-item"><div>9 Indian languages</div><div style="color:var(--green);font-weight:800">✔</div></div>
-          <div class="cmp-item"><div>Zero installs</div><div style="color:var(--green);font-weight:800">✔</div></div>
-        </div>
+        <div class="cmp-card"><h4>MinA</h4><div class="cmp-item"><div>WhatsApp-first</div><div style="color:var(--green);font-weight:800">✔</div></div><div class="cmp-item"><div>Action extraction & scheduling</div><div style="color:var(--green);font-weight:800">✔</div></div><div class="cmp-item"><div>9 Indian languages</div><div style="color:var(--green);font-weight:800">✔</div></div><div class="cmp-item"><div>Zero installs</div><div style="color:var(--green);font-weight:800">✔</div></div></div>
 
-        <div class="cmp-card">
-          <h4>Otter.ai</h4>
-          <div class="cmp-item"><div>WhatsApp-first</div><div style="color:#d9534f;font-weight:800">✖</div></div>
-          <div class="cmp-item"><div>Action extraction</div><div style="color:var(--green);font-weight:800">✔ (partial)</div></div>
-          <div class="cmp-item"><div>Indian languages</div><div style="color:#d9534f;font-weight:800">✖</div></div>
-          <div class="cmp-item"><div>Zero installs</div><div style="color:#d9534f;font-weight:800">✖</div></div>
-        </div>
+        <div class="cmp-card"><h4>Otter.ai</h4><div class="cmp-item"><div>WhatsApp-first</div><div style="color:#d9534f;font-weight:800">✖</div></div><div class="cmp-item"><div>Action extraction</div><div style="color:var(--green);font-weight:800">✔ (partial)</div></div><div class="cmp-item"><div>Indian languages</div><div style="color:#d9534f;font-weight:800">✖</div></div><div class="cmp-item"><div>Zero installs</div><div style="color:#d9534f;font-weight:800">✖</div></div></div>
 
-        <div class="cmp-card">
-          <h4>Fireflies / Grain</h4>
-          <div class="cmp-item"><div>WhatsApp-first</div><div style="color:#d9534f;font-weight:800">✖</div></div>
-          <div class="cmp-item"><div>Meeting capture</div><div style="color:var(--green);font-weight:800">✔</div></div>
-          <div class="cmp-item"><div>Follow-up automation</div><div style="color:#d9534f;font-weight:800">✖ (limited)</div></div>
-          <div class="cmp-item"><div>Zero installs</div><div style="color:#d9534f;font-weight:800">✖</div></div>
-        </div>
+        <div class="cmp-card"><h4>Fireflies / Grain</h4><div class="cmp-item"><div>WhatsApp-first</div><div style="color:#d9534f;font-weight:800">✖</div></div><div class="cmp-item"><div>Meeting capture</div><div style="color:var(--green);font-weight:800">✔</div></div><div class="cmp-item"><div>Follow-up automation</div><div style="color:#d9534f;font-weight:800">✖ (limited)</div></div><div class="cmp-item"><div>Zero installs</div><div style="color:#d9534f;font-weight:800">✖</div></div></div>
       </div>
     </section>
 
-    <!-- Pricing + Testimonials -->
     <section class="section" aria-label="Pricing and testimonials">
       <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">
-        <div style="flex:1;min-width:320px">
-          <div class="price-card">
-            <div style="font-weight:800">Pro</div>
-            <div class="price">₹399 <small style="font-weight:600;color:var(--muted)">/ month</small></div>
-            <div style="color:var(--muted);margin-top:8px">Unlimited meetings • Priority processing • Custom follow-ups</div>
-            <div style="margin-top:14px"><a class="btn-cta" href="https://wa.me/12545365395?text=Hi%20MinA%20—%20Interested%20in%20Pro" target="_blank">Start Pro</a></div>
-          </div>
-        </div>
+        <div style="flex:1;min-width:320px"><div class="price-card"><div style="font-weight:800">Pro</div><div class="price">₹399 <small style="font-weight:600;color:var(--muted)">/ month</small></div><div style="color:var(--muted);margin-top:8px">Unlimited meetings • Priority processing • Custom follow-ups</div><div style="margin-top:14px"><a class="btn-cta" href="https://wa.me/12545365395?text=Hi%20MinA%20—%20Interested%20in%20Pro" target="_blank">Start Pro</a></div></div></div>
 
-        <div style="flex:1;min-width:320px">
-          <div style="font-weight:800;margin-bottom:10px">What customers say</div>
-          <div class="test-grid">
-            <div class="test">“MinA reduced our follow-up churn by 40%” — Ritu, PM</div>
-            <div class="test">“No installs — field team adopted in one day.” — Prakash, Ops</div>
-            <div class="test">“Cross-language summerization makes it effortless for global teams.” — Shivani, Product Owner </div>
-          </div>
-        </div>
+        <div style="flex:1;min-width:320px"><div style="font-weight:800;margin-bottom:10px">What customers say</div><div class="test-grid"><div class="test">“MinA reduced our follow-up churn by 40%.” — Ritu, PM</div><div class="test">“No installs — field team adopted in one day.” — Prakash, Ops</div></div></div>
       </div>
     </section>
 
-    <!-- FAQ -->
     <section id="faq" class="section">
       <div style="font-weight:800;font-size:22px;margin-bottom:12px">FAQ</div>
       <div class="accordion">
-        <div class="acc-item">
-          <div class="acc-q">How do I create a task? <span class="acc-sym">+</span></div>
-          <div class="acc-a">Send a voice note describing an action — MinA extracts tasks automatically and confirms in chat.</div>
-        </div>
-        <div class="acc-item">
-          <div class="acc-q">How do I mark a task complete? <span class="acc-sym">+</span></div>
-          <div class="acc-a">Reply "Done &lt;ID&gt;" (e.g., "Done 1") or "Complete &lt;ID&gt;".</div>
-        </div>
-        <div class="acc-item">
-          <div class="acc-q">What meeting platforms are supported? <span class="acc-sym">+</span></div>
-          <div class="acc-a">Google Meet, Zoom and Microsoft Teams for auto-join and live capture.</div>
-        </div>
-        <div class="acc-item">
-          <div class="acc-q">Is my data safe? <span class="acc-sym">+</span></div>
-          <div class="acc-a">Audio is processed securely with AES-256 encryption; retention is configurable. Send "Privacy" on WhatsApp for details.</div>
-        </div>
+        <div class="acc-item"><div class="acc-q">How do I create a task? <span class="acc-sym">+</span></div><div class="acc-a">Send a voice note describing an action — MinA extracts tasks automatically and confirms in chat.</div></div>
+        <div class="acc-item"><div class="acc-q">How do I mark a task complete? <span class="acc-sym">+</span></div><div class="acc-a">Reply "Done &lt;ID&gt;" (e.g., "Done 1") or "Complete &lt;ID&gt;".</div></div>
+        <div class="acc-item"><div class="acc-q">What meeting platforms are supported? <span class="acc-sym">+</span></div><div class="acc-a">Google Meet, Zoom and Microsoft Teams for auto-join and live capture.</div></div>
+        <div class="acc-item"><div class="acc-q">Is my data safe? <span class="acc-sym">+</span></div><div class="acc-a">Audio is processed securely; retention is configurable. Send "Privacy" on WhatsApp for details.</div></div>
       </div>
     </section>
 
-    <!-- CTA -->
-    <section class="big-cta">
+    <section class="big-cta" style="margin-top:36px;text-align:center">
       <div class="card" style="display:inline-block;padding:28px;text-align:center">
         <h3>Ready to convert your meetings into action?</h3>
-        <div style="margin-top:12px">
-          <a class="btn-cta" href="https://wa.me/12545365395?text=Hi%20MinA" target="_blank">Open WhatsApp</a>
-        </div>
+        <div style="margin-top:12px"><a class="btn-cta" href="https://wa.me/12545365395?text=Hi%20MinA" target="_blank">Open WhatsApp</a></div>
       </div>
     </section>
 
-    <footer>
-      <div>© MinA — Built for busy teams. Made in Bharat</div>
-      <div><a href="#faq" style="text-decoration:none;color:var(--muted)">FAQ</a> · <a href="#compare" style="text-decoration:none;color:var(--muted)">Compare</a></div>
-    </footer>
+    <footer><div>© MinA — Built for busy teams.</div><div><a href="#faq" style="text-decoration:none;color:var(--muted)">FAQ</a> · <a href="#compare" style="text-decoration:none;color:var(--muted)">Compare</a></div></footer>
   </div>
 
-  <!-- Sticky WhatsApp CTA -->
-  <a class="sticky-wa" href="https://wa.me/12545365395?text=Hi%20MinA%20—%20I%27m%20interested%20in%20a%20demo" target="_blank" rel="noopener">💬 Try for Free!</a>
+  <!-- sticky -->
+  <a class="sticky-wa" href="https://wa.me/12545365395?text=Hi%20MinA%20—%20I%27m%20interested%20in%20a%20demo" target="_blank" rel="noopener">💬 +1 254 536 5395</a>
 
-  <!-- Video modal -->
+  <!-- video modal -->
   <div id="videoModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;z-index:9999">
     <div style="width:clamp(320px,86%,900px);height:clamp(200px,56%,560px);position:relative;">
       <button id="closeModal" style="position:absolute;right:-18px;top:-18px;background:#fff;border-radius:999px;padding:8px 10px;border:none;font-weight:800;cursor:pointer">✕</button>
@@ -420,7 +348,7 @@
   </div>
 
   <script>
-    // Demo thumbnail -> open modal (YouTube Short embed)
+    // Demo thumbnail => open modal
     (function(){
       const VIDEO_ID = 'AIeaodH4gBY';
       const demoThumb = document.getElementById('demoThumb');
@@ -438,7 +366,6 @@
         modal.style.display = 'none';
       });
 
-      // close when clicking outside
       modal?.addEventListener('click', (e) => {
         if (e.target === modal) {
           frame.src = '';
@@ -447,57 +374,33 @@
       });
     })();
 
-    // Accordion behavior
+    // Accordion
     document.querySelectorAll('.acc-item').forEach(item => {
       const q = item.querySelector('.acc-q');
       const a = item.querySelector('.acc-a');
       const sym = item.querySelector('.acc-sym');
       q.addEventListener('click', () => {
         const isOpen = a.style.display === 'block';
-        // close others (single open)
         document.querySelectorAll('.acc-a').forEach(b => b.style.display = 'none');
         document.querySelectorAll('.acc-sym').forEach(s => s.textContent = '+');
-        if (!isOpen) {
-          a.style.display = 'block';
-          sym.textContent = '−';
-          setTimeout(()=> q.scrollIntoView({behavior:'smooth',block:'center'}),120);
-        }
+        if (!isOpen) { a.style.display = 'block'; sym.textContent = '−'; setTimeout(()=> q.scrollIntoView({behavior:'smooth',block:'center'}),120); }
       });
     });
 
-    // Smooth anchor scrolling
-    document.querySelectorAll('a[href^="#"]').forEach(link => {
-      link.addEventListener('click', (e) => {
-        const target = document.querySelector(link.getAttribute('href'));
-        if (target) {
-          e.preventDefault();
-          target.scrollIntoView({behavior:'smooth',block:'start'});
-        }
-      });
-    });
-
-    // fade-in story scenes on scroll
+    // scene fade-in on scroll
     const observer = new IntersectionObserver((entries) => {
       entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.style.transform = 'translateY(0)';
-          entry.target.style.opacity = '1';
-        }
+        if (entry.isIntersecting) { entry.target.style.transform='translateY(0)'; entry.target.style.opacity='1'; }
       });
     }, {threshold:0.18});
 
     document.querySelectorAll('.scene').forEach(s => {
-      s.style.transform = 'translateY(8px)';
-      s.style.opacity = '0';
-      s.style.transition = 'opacity .6s ease, transform .6s ease';
-      observer.observe(s);
+      s.style.transform='translateY(8px)'; s.style.opacity='0'; s.style.transition='opacity .6s ease, transform .6s ease'; observer.observe(s);
     });
 
-    // Open WhatsApp quick shortcut (Cmd/Ctrl+K)
+    // quick shortcut to open WhatsApp
     window.addEventListener('keydown', e => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        window.open('https://wa.me/12545365395?text=Hi%20MinA','_blank');
-      }
+      if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='k') window.open('https://wa.me/12545365395?text=Hi%20MinA','_blank');
     });
   </script>
 </body>
