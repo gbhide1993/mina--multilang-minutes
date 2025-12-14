@@ -322,6 +322,7 @@ def twilio_webhook():
                 send_whatsapp(sender, (
                     "Privacy & Security\n\n"
                     "• Audio files are processed securely via OpenAI\n"
+                    "• All the processing is done with AES-256 encryption\n"
                     "• Recordings are not stored permanently\n"
                     "• Transcripts are kept for service delivery only\n"
                     "• No data is shared with third parties\n"
