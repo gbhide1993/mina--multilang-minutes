@@ -322,7 +322,6 @@ def twilio_webhook():
                 send_whatsapp(sender, (
                     "Privacy & Security\n\n"
                     "• Audio files are processed securely via OpenAI\n"
-                    "• All the processing is done with AES-256 encryption\n"
                     "• Recordings are not stored permanently\n"
                     "• Transcripts are kept for service delivery only\n"
                     "• No data is shared with third parties\n"
@@ -711,7 +710,19 @@ def admin_get_notes(phone):
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
+    try:
+        return render_template("index.html")
+    except Exception as e:
+        # Fallback if template not found
+        return """
+<!DOCTYPE html>
+<html><head><title>MinA - WhatsApp AI Assistant</title></head>
+<body>
+<h1>MinA - Your Personal AI Assistant</h1>
+<p>Send a WhatsApp message to +1 (415) 523-8886 to get started!</p>
+<p>MinA helps you create tasks from voice notes and stay organized.</p>
+</body></html>
+        """, 200
 
 
 @app.route("/health", methods=["GET"])
@@ -1263,6 +1274,46 @@ def api_extract_tasks_from_voice(meeting_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/meeting/<int:meeting_id>/extract-reminders", methods=["POST"])
+def api_extract_custom_reminders(meeting_id):
+    """
+    Extract custom reminders from voice note transcript.
+    Returns: {"reminders": [...], "count": N}
+    """
+    try:
+        # Get transcript and phone
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT transcript, phone FROM meeting_notes WHERE id=%s", (meeting_id,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({"error": "meeting not found"}), 404
+            
+            transcript_enc = row[0] if not hasattr(row, "get") else row.get("transcript")
+            phone = row[1] if not hasattr(row, "get") else row.get("phone")
+            
+            if not transcript_enc:
+                return jsonify({"error": "transcript not available"}), 400
+            
+            # Decrypt if needed
+            try:
+                transcript = decrypt_sensitive_data(transcript_enc)
+            except:
+                transcript = transcript_enc  # Not encrypted
+        
+        # Extract custom reminders
+        from custom_reminders import extract_custom_reminders
+        reminders = extract_custom_reminders(transcript, phone, meeting_id)
+        
+        return jsonify({
+            "reminders": reminders,
+            "count": len(reminders)
+        }), 200
+        
+    except Exception as e:
+        debug_print("api_extract_custom_reminders error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/tasks", methods=["GET"])
 def api_get_tasks():
     """
@@ -1395,6 +1446,21 @@ def api_send_task_checkin():
         return jsonify({"sent": sent}), 200
     except Exception as e:
         debug_print("api_send_task_checkin error:", e, traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reminders/send-custom", methods=["POST"])
+def api_send_custom_reminders():
+    """
+    Admin endpoint to manually trigger custom reminders check.
+    Returns: {"sent": count}
+    """
+    try:
+        from custom_reminders import check_and_send_custom_reminders
+        sent = check_and_send_custom_reminders()
+        return jsonify({"sent": sent}), 200
+    except Exception as e:
+        debug_print("api_send_custom_reminders error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
 
