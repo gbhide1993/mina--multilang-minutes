@@ -20,6 +20,7 @@ def init_scheduler(app):
     try:
         from scheduled_reminders import schedule_morning_reminders, schedule_evening_summaries
         from advanced_features import schedule_task_checkins, schedule_weekly_summaries
+        from smart_followups import send_daily_followup, send_weekly_scorecard, send_gentle_nudge
         
         # 9 AM IST (UTC+5:30) = 3:30 AM UTC
         scheduler.add_job(
@@ -71,10 +72,44 @@ def init_scheduler(app):
         )
         logger.info("✅ Weekly summary scheduled for Sunday 8 PM IST (2:30 PM UTC)")
         
+        # 10 AM IST (UTC+5:30) = 4:30 AM UTC - Daily Personal Follow-Up
+        scheduler.add_job(
+            func=send_daily_followup,
+            trigger=CronTrigger(hour=4, minute=30),
+            id='daily_followup_10am_ist',
+            name='Daily Personal Follow-Up (10 AM IST)',
+            replace_existing=True
+        )
+        logger.info("✅ Daily follow-up scheduled for 10 AM IST (4:30 AM UTC)")
+        
+        # Sunday 9 PM IST (UTC+5:30) = 3:30 PM UTC - Weekly Scorecard
+        scheduler.add_job(
+            func=send_weekly_scorecard,
+            trigger=CronTrigger(day_of_week='sun', hour=15, minute=30),
+            id='weekly_scorecard_sunday_9pm_ist',
+            name='Weekly Task Completion Scorecard (Sunday 9 PM IST)',
+            replace_existing=True
+        )
+        logger.info("✅ Weekly scorecard scheduled for Sunday 9 PM IST (3:30 PM UTC)")
+        
+        # Wednesday 4 PM IST (UTC+5:30) = 10:30 AM UTC - Gentle Nudge
+        scheduler.add_job(
+            func=send_gentle_nudge,
+            trigger=CronTrigger(day_of_week='wed', hour=10, minute=30),
+            id='gentle_nudge_wednesday_4pm_ist',
+            name='Gentle Nudge for Old Tasks (Wednesday 4 PM IST)',
+            replace_existing=True
+        )
+        logger.info("✅ Gentle nudge scheduled for Wednesday 4 PM IST (10:30 AM UTC)")
+        
+        # Custom reminders check (every minute)
+        from custom_reminders import setup_custom_reminder_scheduler
+        setup_custom_reminder_scheduler(scheduler)
+        
         # Start scheduler
         if not scheduler.running:
             scheduler.start()
-            logger.info("✅ APScheduler started with 5 jobs (9 AM, 12 PM, 3 PM, 6 PM, weekly)")
+            logger.info("✅ APScheduler started with 9 jobs (morning, midday, afternoon, evening, weekly, follow-ups, scorecard, nudge, custom reminders)")
         
         # Shutdown scheduler on app exit
         atexit.register(lambda: scheduler.shutdown())
