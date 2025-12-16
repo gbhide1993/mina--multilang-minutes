@@ -332,6 +332,12 @@ def twilio_webhook():
             handle_image_message(sender, media_url)
             return ("", 204)
         
+        # Handle numbered button responses (1, 2, 3)
+        if body_text and body_text.strip() in ['1', '2', '3']:
+            from whatsapp_features import handle_numbered_response
+            handle_numbered_response(sender, body_text.strip())
+            return ("", 204)
+        
         # Handle interactive button responses
         button_payload = request.values.get("ButtonPayload")
         if button_payload:
