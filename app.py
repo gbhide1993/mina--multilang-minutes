@@ -316,6 +316,29 @@ def twilio_webhook():
         
         # Handle text messages for language selection
         body_text = (request.values.get("Body") or request.form.get("Body") or "").strip()
+        
+        # Handle location messages
+        latitude = request.values.get("Latitude")
+        longitude = request.values.get("Longitude")
+        if latitude and longitude:
+            from whatsapp_features import handle_location_message
+            address = request.values.get("Address")
+            handle_location_message(sender, float(latitude), float(longitude), address)
+            return ("", 204)
+        
+        # Handle image messages
+        if media_url and "image" in (request.values.get("MediaContentType0") or ""):
+            from whatsapp_features import handle_image_message
+            handle_image_message(sender, media_url)
+            return ("", 204)
+        
+        # Handle interactive button responses
+        button_payload = request.values.get("ButtonPayload")
+        if button_payload:
+            from whatsapp_features import handle_button_response
+            handle_button_response(sender, button_payload)
+            return ("", 204)
+        
         if not media_url:
             # Show privacy notice for 'privacy' or 'security' requests
             if body_text.lower() in ['privacy', 'security', 'data', 'terms']:
@@ -333,47 +356,33 @@ def twilio_webhook():
             # Check if user has pending summary job first
             pending_job = _get_pending_summary_job(sender)
             
-            # Show tasks command - check BEFORE language parsing
+            # Show tasks command with interactive list
             if body_text.lower() in ['show my tasks', 'show my task', 'tasks', 'task', 'my tasks', 'my task', 'list tasks', 'show tasks', 'show task']:
                 try:
-                    from db import get_tasks_for_user, get_user_by_phone
-                    user = get_user_by_phone(sender)
-                    if not user:
+                    from whatsapp_features import send_morning_briefing_with_list
+                    success = send_morning_briefing_with_list(sender)
+                    if not success:
                         send_whatsapp(sender, "You don't have any tasks yet. Send a voice note to create tasks!")
-                        return ("", 204)
-                    
-                    tasks = get_tasks_for_user(user['id'], status='open', limit=20)
-                    
-                    if not tasks:
-                        send_whatsapp(sender, "✅ You have no pending tasks! Great job!")
-                    else:
-                        message = f"📋 *Your Tasks ({len(tasks)})*\n\n"
-                        for i, task in enumerate(tasks, 1):
-                            title = task.get('title', 'Untitled')
-                            due = task.get('due_at')
-                            task_id = task.get('id')
-                            
-                            if due:
-                                from datetime import datetime
-                                due_str = datetime.fromisoformat(str(due)).strftime('%b %d')
-                                message += f"{i}. {title}\n   📅 Due: {due_str} | ID: {task_id}\n\n"
-                            else:
-                                message += f"{i}. {title}\n   ID: {task_id}\n\n"
-                        
-                        message += "Reply 'Done <ID>' to complete a task"
-                        send_whatsapp(sender, message)
                 except Exception as e:
                     print(f"Error showing tasks: {e}")
                     send_whatsapp(sender, "❌ Failed to fetch tasks. Please try again.")
                 return ("", 204)
             
-            # Complete task command - check BEFORE language parsing
+            # Complete task command with interactive confirmation
             if body_text.lower().startswith('done '):
                 try:
                     from advanced_features import parse_task_completion_response
                     result = parse_task_completion_response(body_text, sender)
                     if result and result.get('success'):
-                        send_whatsapp(sender, result.get('message', '✅ Task completed!'))
+                        # Send completion with celebration buttons
+                        from whatsapp_features import send_interactive_buttons
+                        msg = f"🎉 {result.get('message', 'Task completed!')}"
+                        buttons = [
+                            {"id": "show_tasks", "title": "📋 Show Tasks"},
+                            {"id": "add_task", "title": "➕ Add Task"},
+                            {"id": "celebrate", "title": "🎉 Celebrate"}
+                        ]
+                        send_interactive_buttons(sender, msg, buttons)
                     else:
                         send_whatsapp(sender, result.get('message', '❌ Task not found') if result else '❌ Invalid format. Use: Done <task_id>')
                 except Exception as e:
@@ -486,14 +495,22 @@ def twilio_webhook():
                 menu = get_language_menu()
                 send_whatsapp(sender, f"⏳ *Please select a language from the menu:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
             else:
-                # New user - show guidance with privacy notice
-                send_whatsapp(sender, (
-                    "Hi! Send a voice message and I'll create meeting minutes!\n\n"
-                    "🎙️ Send voice note → Choose summary language → Get results\n"
-                    "🌐 Type 'language' to see supported languages\n\n"
-                    "🔒 Privacy: Your audio is processed securely and not stored permanently. "
-                    "By using this service, you consent to audio processing for transcription."
-                ))
+                # New user - show guidance with interactive buttons
+                from whatsapp_features import send_interactive_buttons
+                welcome_msg = (
+                    "Hi! I'm MinA, your AI assistant! 🤖\n\n"
+                    "🎙️ Send voice notes for meeting minutes\n"
+                    "📍 Share location for check-ins\n"
+                    "📇 Forward contacts to save them\n"
+                    "📸 Send images for text extraction\n\n"
+                    "What would you like to do?"
+                )
+                buttons = [
+                    {"id": "help_voice", "title": "🎙️ Voice Help"},
+                    {"id": "help_tasks", "title": "📋 Task Help"},
+                    {"id": "help_features", "title": "✨ All Features"}
+                ]
+                send_interactive_buttons(sender, welcome_msg, buttons)
             return ("", 204)
 
         # Download media to local file
@@ -728,6 +745,40 @@ def index():
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "time": datetime.utcnow().isoformat()}), 200
+
+
+@app.route("/debug-twilio", methods=["GET"])
+def debug_twilio():
+    """Debug endpoint to check Twilio credentials"""
+    try:
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        from_number = os.getenv("TWILIO_WHATSAPP_FROM") or os.getenv("TWILIO_FROM")
+        
+        # Test Twilio API connection
+        test_result = "unknown"
+        if account_sid and auth_token:
+            try:
+                import requests
+                resp = requests.get(
+                    "https://api.twilio.com/2010-04-01/Accounts.json",
+                    auth=(account_sid, auth_token),
+                    timeout=10
+                )
+                test_result = f"HTTP {resp.status_code}"
+            except Exception as e:
+                test_result = f"Error: {str(e)}"
+        
+        return jsonify({
+            "twilio_sid_present": bool(account_sid),
+            "twilio_token_present": bool(auth_token),
+            "twilio_from_present": bool(from_number),
+            "twilio_sid_preview": f"{account_sid[:10]}...{account_sid[-4:]}" if account_sid else None,
+            "twilio_from": from_number,
+            "api_test": test_result
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/clear-queue", methods=["GET", "POST"])
