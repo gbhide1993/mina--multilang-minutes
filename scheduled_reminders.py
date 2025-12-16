@@ -69,20 +69,28 @@ def get_all_active_users():
         return []
 
 def send_morning_reminder(phone):
-    """Send 9 AM morning reminder with pending tasks count"""
+    """Send 9 AM morning reminder with interactive task list"""
     try:
-        pending_count = get_pending_tasks_count(phone)
+        from whatsapp_features import send_morning_briefing_with_list
         
-        if pending_count == 0:
-            message = "🌅 Good morning! You have no pending tasks today. Have a great day!\n\n_Sent via MinA - Your AI Assistant_"
-        elif pending_count == 1:
-            message = "🌅 Good morning! You have 1 pending action item today.\nWant to review it?\n\n_Sent via MinA - Your AI Assistant_"
+        # Try to send interactive morning briefing
+        success = send_morning_briefing_with_list(phone)
+        
+        if success:
+            print(f"✅ Interactive morning reminder sent to {phone}")
+            return True
         else:
-            message = f"🌅 Good morning! You have {pending_count} pending action items today.\nWant to review them?\n\n_Sent via MinA - Your AI Assistant_"
-        
-        send_whatsapp(phone, message)
-        print(f"✅ Morning reminder sent to {phone} ({pending_count} tasks)")
-        return True
+            # Fallback to regular message
+            pending_count = get_pending_tasks_count(phone)
+            if pending_count == 0:
+                message = "🌅 Good morning! You have no pending tasks today. Have a great day!"
+            else:
+                message = f"🌅 Good morning! You have {pending_count} pending tasks. Reply 'tasks' to see them."
+            
+            send_whatsapp(phone, message)
+            print(f"✅ Morning reminder sent to {phone} ({pending_count} tasks)")
+            return True
+            
     except Exception as e:
         print(f"❌ Failed to send morning reminder to {phone}: {e}")
         return False
