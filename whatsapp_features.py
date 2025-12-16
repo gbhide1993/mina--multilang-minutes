@@ -16,58 +16,15 @@ from db import get_conn, create_task, get_user_by_phone
 
 def send_interactive_buttons(phone, message, buttons):
     """
-    Send WhatsApp message with interactive buttons
+    Send WhatsApp message with interactive buttons (fallback to text)
     buttons = [{"id": "btn1", "title": "Mark Done"}, {"id": "btn2", "title": "Snooze"}]
     """
-    try:
-        from twilio.rest import Client
-        
-        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        from_number = os.getenv("TWILIO_WHATSAPP_FROM")
-        
-        client = Client(account_sid, auth_token)
-        
-        # Create interactive message with buttons
-        button_components = []
-        for i, btn in enumerate(buttons[:3]):  # Max 3 buttons
-            button_components.append({
-                "type": "button",
-                "button": {
-                    "type": "reply",
-                    "reply": {
-                        "id": btn["id"],
-                        "title": btn["title"][:20]  # Max 20 chars
-                    }
-                }
-            })
-        
-        interactive_message = {
-            "type": "interactive",
-            "interactive": {
-                "type": "button",
-                "body": {"text": message},
-                "action": {"buttons": button_components}
-            }
-        }
-        
-        msg = client.messages.create(
-            from_=from_number,
-            to=phone,
-            content_sid=None,
-            body=json.dumps(interactive_message)
-        )
-        
-        print(f"✅ Interactive buttons sent to {phone}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Failed to send interactive buttons: {e}")
-        # Fallback to regular message with text options
-        fallback_msg = f"{message}\n\n"
-        for btn in buttons:
-            fallback_msg += f"Reply '{btn['id']}' for {btn['title']}\n"
-        return send_whatsapp(phone, fallback_msg)
+    # Use text-based buttons for better compatibility
+    fallback_msg = f"{message}\n\n"
+    for i, btn in enumerate(buttons[:3], 1):
+        fallback_msg += f"{i}️⃣ {btn['title']}\n"
+    fallback_msg += "\nReply with the number to choose an option."
+    return send_whatsapp(phone, fallback_msg)
 
 def send_task_reminder_with_buttons(phone, task_id, task_title, due_date=None):
     """Send task reminder with interactive action buttons"""
@@ -349,6 +306,28 @@ def handle_image_message(phone, image_url):
         
     except Exception as e:
         print(f"Error handling image: {e}")
+        return False
+
+def handle_numbered_response(phone, number):
+    """Handle numbered button responses (1, 2, 3)"""
+    try:
+        # Store the last button context for this user (you might want to use Redis for this)
+        # For now, we'll handle common scenarios
+        
+        if number == "1":
+            # First option - usually positive action
+            send_whatsapp(phone, "✅ Option 1 selected!")
+        elif number == "2":
+            # Second option - usually alternative action
+            send_whatsapp(phone, "✅ Option 2 selected!")
+        elif number == "3":
+            # Third option - usually negative/skip action
+            send_whatsapp(phone, "✅ Option 3 selected!")
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error handling numbered response: {e}")
         return False
 
 def handle_button_response(phone, button_id):
