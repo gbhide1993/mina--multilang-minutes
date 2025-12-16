@@ -339,12 +339,16 @@ def init_db():
         );
         """)
         
+        # Ensure task_id column exists in location_checkins table
+        cur.execute("ALTER TABLE location_checkins ADD COLUMN IF NOT EXISTS task_id INTEGER;")
+        
         # Create indexes for new tables
         cur.execute("CREATE INDEX IF NOT EXISTS idx_location_checkins_user_time ON location_checkins(user_phone, checkin_time);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_contacts_user_phone ON contacts(user_phone);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_image_activities_user_type ON image_activities(user_phone, activity_type);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_user_activities_user_type ON user_activities(user_phone, activity_type, created_at);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_custom_reminders_remind_at ON custom_reminders(remind_at, sent);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_location_checkins_task_id ON location_checkins(task_id);")
         
         conn.commit()
 
