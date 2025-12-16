@@ -35,6 +35,7 @@ from db_multilang import init_multilang_db, set_user_language, get_user_language
 from language_handler_v2 import get_language_menu, parse_language_choice, get_language_name
 import re
 from payments import create_payment_link_for_phone, handle_webhook_event, verify_razorpay_webhook
+from subscription_api import add_subscription_routes
 
 # New imports for API endpoints
 from werkzeug.utils import secure_filename
@@ -89,6 +90,9 @@ app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 # Initialize scheduled reminders
 from scheduler_setup import init_scheduler
 init_scheduler(app)
+
+# Add subscription routes
+add_subscription_routes(app)
 
 # Create temp directory for audio files
 TEMP_DIR = os.getenv("TEMP_DIR", os.getcwd())
@@ -486,6 +490,17 @@ def twilio_webhook():
                     send_whatsapp(sender, menu)
                 return ("", 204)
             
+            # Handle subscription commands
+            if body_text.lower() in ['subscribe', 'premium', 'upgrade', 'subscription', '499']:
+                premium_link = "https://rzp.io/rzp/ioFxwdz"
+                send_whatsapp(sender, f"🏆 *Upgrade to Chief of Staff (₹499/month)*\n\n✅ Unlimited voice transcription\n✅ Unlimited image OCR\n✅ Unlimited location tracking\n✅ Priority support\n\n💳 Subscribe now: {premium_link}")
+                return ("", 204)
+            
+            if body_text.lower() in ['basic', 'basic plan', '299']:
+                basic_link = "https://rzp.io/rzp/X6bzLXmD"
+                send_whatsapp(sender, f"💎 *Upgrade to Assistant (₹299/month)*\n\n✅ 90 minutes voice\n✅ 40 OCR scans\n✅ 75 location check-ins\n✅ Priority support\n\n💳 Subscribe now: {basic_link}")
+                return ("", 204)
+            
             # Set user language preference (when no pending job)
             if lang_choice and not pending_job:
                 set_user_language(sender, lang_choice)
@@ -573,10 +588,13 @@ def twilio_webhook():
                 # Not enough credits: send subscription link
                 conn.rollback()
                 try:
-                    url = "https://rzp.io/rzp/X6bzLXmD"
+                    premium_url = "https://rzp.io/rzp/ioFxwdz"
+                    basic_url = "https://rzp.io/rzp/X6bzLXmD"
                     send_whatsapp(phone, (
-                        "⚠️ You don't have enough free minutes to transcribe this audio. "
-                        "Subscribe for unlimited access — follow this secure payment link:\n\n" + url
+                        "⚠️ You don't have enough free minutes to transcribe this audio.\n\n"
+                        "💎 Assistant (₹299/month): " + basic_url + "\n"
+                        "🏆 Chief of Staff (₹499/month): " + premium_url + "\n\n"
+                        "Choose your plan for unlimited access!"
                     ))
                 except Exception as e:
                     debug_print("Failed to send payment link:", e)
@@ -609,27 +627,30 @@ def twilio_webhook():
         except Exception as e:
             debug_print(f"Failed to cleanup temp file {local_path}:", e)
 
-        # Enqueue job using correct worker function
+        # Enqueue job using correct worker function with Redis fallback
         try:
             if queue:
-                job = queue.enqueue(
+                from redis_fallback import safe_enqueue
+                job = safe_enqueue(
+                    queue,
                     "worker_multilang_production_fixed_clean.process_audio_job",
                     meeting_id,
                     media_url,
-                    job_timeout=60 * 60,  # Standard timeout for Render worker
+                    job_timeout=60 * 60,
                     result_ttl=60 * 60
                 )
                 if job:
                     debug_print(f"✅ Successfully enqueued job {job.id} for meeting_id={meeting_id}")
                     send_whatsapp(phone, "🎙️ Processing your audio... I'll transcribe it first!")
                 else:
-                    raise Exception("Job enqueue returned None")
+                    # Redis is read-only, inform user
+                    send_whatsapp(phone, "⚠️ Service temporarily unavailable due to maintenance. Please try again in a few minutes.")
             else:
                 raise Exception("Queue not initialized")
         except Exception as e:
             debug_print("❌ Failed to enqueue job:", e)
             try:
-                send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again.")
+                send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again in a few minutes.")
             except Exception:
                 pass
 
@@ -760,6 +781,7 @@ def debug_twilio():
         account_sid = os.getenv("TWILIO_ACCOUNT_SID")
         auth_token = os.getenv("TWILIO_AUTH_TOKEN")
         from_number = os.getenv("TWILIO_WHATSAPP_FROM") or os.getenv("TWILIO_FROM")
+        openai_key = os.getenv("OPENAI_API_KEY")
         
         # Test Twilio API connection
         test_result = "unknown"
@@ -779,7 +801,9 @@ def debug_twilio():
             "twilio_sid_present": bool(account_sid),
             "twilio_token_present": bool(auth_token),
             "twilio_from_present": bool(from_number),
+            "openai_key_present": bool(openai_key),
             "twilio_sid_preview": f"{account_sid[:10]}...{account_sid[-4:]}" if account_sid else None,
+            "openai_key_preview": f"{openai_key[:10]}...{openai_key[-4:]}" if openai_key else None,
             "twilio_from": from_number,
             "api_test": test_result
         }), 200
@@ -1026,6 +1050,41 @@ def test_audio_format():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/test-image-ocr", methods=["POST"])
+def test_image_ocr():
+    """Test endpoint to check image OCR functionality"""
+    try:
+        data = request.get_json()
+        image_url = data.get("image_url")
+        phone = data.get("phone", "test_user")
+        
+        if not image_url:
+            return jsonify({"error": "image_url required"}), 400
+        
+        # Test the image OCR function directly
+        from whatsapp_features import extract_text_from_image, handle_image_message
+        
+        # Test extraction
+        extracted_text = extract_text_from_image(image_url)
+        
+        # Test full handler
+        handler_result = handle_image_message(phone, image_url)
+        
+        return jsonify({
+            "extracted_text": extracted_text,
+            "handler_success": handler_result,
+            "openai_key_present": bool(os.getenv("OPENAI_API_KEY")),
+            "twilio_creds_present": bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN"))
+        }), 200
+        
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }), 500
 
 
 # -----------------------
