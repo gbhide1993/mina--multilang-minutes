@@ -129,6 +129,14 @@ def init_db():
         # Add language preference column
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'hi';")
         
+        # Add subscription tier and feature usage tracking
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_tier VARCHAR(20) DEFAULT 'free';")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_voice_minutes_used FLOAT DEFAULT 0.0;")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_image_ocr_count INTEGER DEFAULT 0;")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_location_checkins INTEGER DEFAULT 0;")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_contacts_saved INTEGER DEFAULT 0;")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS usage_reset_date TIMESTAMP DEFAULT NOW();")
+        
         # Add multilang columns for production worker
         cur.execute("ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS detected_language VARCHAR(5);")
         cur.execute("ALTER TABLE meeting_notes ADD COLUMN IF NOT EXISTS chosen_language VARCHAR(5);")
@@ -717,10 +725,167 @@ def get_user_language(phone):
     user = get_user(phone)
     return user.get('preferred_language', 'hi') if user else 'hi'
 
+# SUBSCRIPTION TIER MANAGEMENT
+
+def get_user_subscription_tier(phone):
+    """Get user's subscription tier"""
+    user = get_user_by_phone(phone)
+    return user.get('subscription_tier', 'free') if user else 'free'
+
+def check_feature_limit(phone, feature_type):
+    """Check if user can use a feature based on their subscription tier"""
+    user = get_user_by_phone(phone)
+    if not user:
+        return False, "User not found"
+    
+    tier = user.get('subscription_tier', 'free')
+    
+    # Reset monthly counters if needed
+    reset_monthly_usage_if_needed(phone)
+    
+    # Feature limits by tier
+    limits = {
+        'free': {
+            'voice_minutes': 15,  # Reduced to create bigger gap
+            'image_ocr': 3,       # Reduced to create urgency
+            'location_checkins': 5,  # Minimal for testing
+            'contacts_saved': 10     # Just enough to try
+        },
+        'basic': {  # ₹299
+            'voice_minutes': 90,     # 6x increase from FREE
+            'image_ocr': 40,         # 13x increase from FREE
+            'location_checkins': 75, # 15x increase from FREE
+            'contacts_saved': 150    # 15x increase from FREE
+        },
+        'premium': {  # ₹499
+            'voice_minutes': float('inf'),
+            'image_ocr': float('inf'),
+            'location_checkins': float('inf'),
+            'contacts_saved': float('inf')
+        }
+    }
+    
+    if tier not in limits:
+        return False, "Invalid subscription tier"
+    
+    tier_limits = limits[tier]
+    
+    if feature_type == 'voice_minutes':
+        used = user.get('monthly_voice_minutes_used', 0)
+        limit = tier_limits['voice_minutes']
+    elif feature_type == 'image_ocr':
+        used = user.get('monthly_image_ocr_count', 0)
+        limit = tier_limits['image_ocr']
+    elif feature_type == 'location_checkins':
+        used = user.get('monthly_location_checkins', 0)
+        limit = tier_limits['location_checkins']
+    elif feature_type == 'contacts_saved':
+        used = user.get('monthly_contacts_saved', 0)
+        limit = tier_limits['contacts_saved']
+    else:
+        return False, "Unknown feature type"
+    
+    if used >= limit:
+        return False, f"Monthly limit reached ({used}/{limit}). Upgrade to continue."
+    
+    return True, f"Usage: {used}/{limit}"
+
+def increment_feature_usage(phone, feature_type, amount=1):
+    """Increment feature usage counter"""
+    with get_conn() as conn, conn.cursor() as cur:
+        if feature_type == 'voice_minutes':
+            cur.execute("UPDATE users SET monthly_voice_minutes_used = monthly_voice_minutes_used + %s WHERE phone = %s", (amount, phone))
+        elif feature_type == 'image_ocr':
+            cur.execute("UPDATE users SET monthly_image_ocr_count = monthly_image_ocr_count + %s WHERE phone = %s", (amount, phone))
+        elif feature_type == 'location_checkins':
+            cur.execute("UPDATE users SET monthly_location_checkins = monthly_location_checkins + %s WHERE phone = %s", (amount, phone))
+        elif feature_type == 'contacts_saved':
+            cur.execute("UPDATE users SET monthly_contacts_saved = monthly_contacts_saved + %s WHERE phone = %s", (amount, phone))
+        conn.commit()
+
+def reset_monthly_usage_if_needed(phone):
+    """Reset monthly usage counters if a month has passed"""
+    user = get_user_by_phone(phone)
+    if not user:
+        return
+    
+    reset_date = user.get('usage_reset_date')
+    if not reset_date:
+        return
+    
+    # Check if a month has passed
+    from datetime import datetime
+    now = datetime.now()
+    if isinstance(reset_date, str):
+        reset_date = datetime.fromisoformat(reset_date.replace('Z', '+00:00'))
+    
+    if (now - reset_date).days >= 30:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                UPDATE users SET 
+                    monthly_voice_minutes_used = 0,
+                    monthly_image_ocr_count = 0,
+                    monthly_location_checkins = 0,
+                    monthly_contacts_saved = 0,
+                    usage_reset_date = NOW()
+                WHERE phone = %s
+            """, (phone,))
+            conn.commit()
+
+def upgrade_user_subscription(phone, tier, duration_days=30):
+    """Upgrade user to a subscription tier"""
+    with get_conn() as conn, conn.cursor() as cur:
+        expiry = datetime.now() + timedelta(days=duration_days)
+        cur.execute("""
+            UPDATE users SET 
+                subscription_tier = %s,
+                subscription_active = TRUE,
+                subscription_expiry = %s
+            WHERE phone = %s
+        """, (tier, expiry, phone))
+        conn.commit()
+
+def get_upgrade_message(current_tier):
+    """Get upgrade message based on current tier"""
+    if current_tier == 'free':
+        return (
+            "🚀 *Upgrade to unlock more features!*\n\n"
+            "💎 **BASIC (₹299/month)**\n"
+            "• 60 minutes voice transcription\n"
+            "• 25 image OCR scans\n"
+            "• 50 location check-ins\n"
+            "• 100 contacts storage\n\n"
+            "🏆 **PREMIUM (₹499/month)**\n"
+            "• Unlimited everything\n"
+            "• Priority support\n"
+            "• Advanced analytics\n"
+            "• Team collaboration\n\n"
+            "💳 Pay securely: https://rzp.io/rzp/X6bzLXmD"
+        )
+    elif current_tier == 'basic':
+        return (
+            "🏆 *Upgrade to PREMIUM for unlimited access!*\n\n"
+            "**PREMIUM (₹499/month)**\n"
+            "• Unlimited voice transcription\n"
+            "• Unlimited image OCR\n"
+            "• Unlimited location tracking\n"
+            "• Unlimited contacts\n"
+            "• Priority support\n"
+            "• Advanced analytics\n\n"
+            "💳 Upgrade now: https://rzp.io/rzp/X6bzLXmD"
+        )
+    else:
+        return "✨ You're already on our highest tier! Enjoy unlimited access."
+
 # NEW FEATURES DATABASE FUNCTIONS
 
 def log_location_checkin(phone, latitude, longitude, address=None, task_id=None):
     """Log location check-in to database"""
+    # Check feature limit before processing
+    can_use, message = check_feature_limit(phone, 'location_checkins')
+    if not can_use:
+        return None  # Will be handled by calling function
+    
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             INSERT INTO location_checkins (user_phone, latitude, longitude, address, task_id, checkin_time)
@@ -729,10 +894,19 @@ def log_location_checkin(phone, latitude, longitude, address=None, task_id=None)
         """, (phone, latitude, longitude, address, task_id))
         row = cur.fetchone()
         conn.commit()
+        
+        # Increment usage counter
+        increment_feature_usage(phone, 'location_checkins', 1)
+        
         return dict(row) if row else None
 
 def log_contact_save(phone, contact_name, contact_number, contact_email=None, company=None, source='whatsapp'):
     """Save contact to database"""
+    # Check feature limit before processing
+    can_use, message = check_feature_limit(phone, 'contacts_saved')
+    if not can_use:
+        return None  # Will be handled by calling function
+    
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             INSERT INTO contacts (user_phone, contact_name, contact_number, contact_email, company, source)
@@ -746,10 +920,20 @@ def log_contact_save(phone, contact_name, contact_number, contact_email=None, co
         """, (phone, contact_name, contact_number, contact_email, company, source))
         row = cur.fetchone()
         conn.commit()
+        
+        # Increment usage counter (only for new contacts)
+        if row:
+            increment_feature_usage(phone, 'contacts_saved', 1)
+        
         return dict(row) if row else None
 
 def log_image_activity(phone, image_url, extracted_text, activity_type, result_data=None):
     """Log image OCR activity to database"""
+    # Check feature limit before processing
+    can_use, message = check_feature_limit(phone, 'image_ocr')
+    if not can_use:
+        return None  # Will be handled by calling function
+    
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
             INSERT INTO image_activities (user_phone, image_url, extracted_text, activity_type, result_data)
@@ -758,6 +942,10 @@ def log_image_activity(phone, image_url, extracted_text, activity_type, result_d
         """, (phone, image_url, extracted_text, activity_type, json.dumps(result_data) if result_data else None))
         row = cur.fetchone()
         conn.commit()
+        
+        # Increment usage counter
+        increment_feature_usage(phone, 'image_ocr', 1)
+        
         return dict(row) if row else None
 
 def log_user_activity(phone, activity_type, activity_data=None, source='whatsapp'):
