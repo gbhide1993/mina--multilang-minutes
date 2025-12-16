@@ -29,7 +29,6 @@
       --radius-md: 16px;
       --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
       --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-      --shadow-brand: 0 20px 25px -5px rgba(0, 191, 216, 0.15), 0 10px 10px -5px rgba(0, 191, 216, 0.04);
       --max-w: 1200px;
     }
 
@@ -196,41 +195,54 @@
     .slideshow-item img { width: 100%; height: 100%; object-fit: cover; }
     .slideshow-item:nth-child(1) { opacity: 1; }
 
-    /* --- FEATURES (BENTO GRID) --- */
+    /* --- FEATURES (ZIG ZAG LAYOUT) --- */
     .section-title { margin-bottom: 48px; text-align: center; }
     .section-title h2 { font-size: 36px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 12px; }
     
-    .bento-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      grid-template-rows: repeat(2, minmax(280px, auto));
-      gap: 24px;
+    .feature-row {
+        display: flex;
+        align-items: center;
+        gap: 60px;
+        margin-bottom: 100px;
     }
     
-    .bento-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-lg);
-      padding: 32px;
-      position: relative;
-      overflow: hidden;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    /* Reverse Modifier for Zig-Zag */
+    .feature-row.reverse {
+        flex-direction: row-reverse;
     }
-    .bento-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
     
-    .span-2 { grid-column: span 2; }
-    @media(max-width: 900px) { .bento-grid { grid-template-columns: 1fr; } .span-2 { grid-column: auto; } }
-
-    .bento-icon {
-      width: 48px; height: 48px; border-radius: 12px;
+    .feature-text { flex: 1; }
+    .feature-visual { flex: 1; display: flex; justify-content: center; position: relative;}
+    
+    .feature-icon {
+      width: 64px; height: 64px; border-radius: 16px;
       background: linear-gradient(135deg, rgba(0,191,216,0.1), rgba(122,209,139,0.1));
       color: #008B9D; display: flex; align-items: center; justify-content: center;
-      font-size: 24px; margin-bottom: 20px;
+      font-size: 32px; margin-bottom: 24px;
     }
-    .bento-card h3 { font-size: 20px; font-weight: 700; margin: 0 0 8px 0; }
-    .bento-card p { font-size: 15px; color: var(--text-muted); margin: 0; }
-    .bento-phone-container { margin-top: 24px; width: 100%; display: flex; justify-content: center; }
-    .bento-phone { width: 100%; max-width: 260px; }
+    .feature-text h3 { font-size: 32px; font-weight: 800; margin: 0 0 16px 0; line-height: 1.2; }
+    .feature-text p { font-size: 18px; color: var(--text-muted); margin: 0; line-height: 1.6; }
+
+    /* Visual Elements */
+    .phone-mockup { width: 260px; height: auto; }
+    
+    /* Mobile Responsive for Zig Zag */
+    @media(max-width: 900px) {
+        .feature-row, .feature-row.reverse { flex-direction: column-reverse; gap: 30px; margin-bottom: 60px; }
+        .feature-text { text-align: center; }
+        .feature-icon { margin: 0 auto 20px; }
+        .feature-text h3 { font-size: 24px; }
+    }
+
+    /* Chat UI Visual */
+    .chat-ui {
+      background: #E5DDD5; padding: 20px; border-radius: 24px; width: 300px;
+      font-family: 'Segoe UI', sans-serif; font-size: 14px;
+      box-shadow: var(--shadow-lg); transform: rotate(-3deg);
+    }
+    .chat-msg { background: white; padding: 10px 14px; border-radius: 0 12px 12px 12px; margin-bottom: 12px; width: fit-content; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+    .chat-reply { background: #d9fdd3; padding: 10px 14px; border-radius: 12px 0 12px 12px; margin-left: auto; width: fit-content; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+
 
     /* --- SUCCESS STORIES (WALL OF LOVE) --- */
     .stories-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
@@ -324,7 +336,6 @@
     @media(max-width: 768px) {
       h1 { font-size: 36px; }
       .hero-section { padding: 40px 0; }
-      .bento-grid { grid-template-columns: 1fr; }
       .pricing-grid { grid-template-columns: 1fr; gap: 40px; }
       .price-card.highlight { transform: scale(1); }
       .nav-links-container { display: none; }
@@ -395,17 +406,10 @@
           <div class="slideshow-container">
             <div class="slideshow-item"><img src="./static/tasks_list.PNG" alt="MinA Interface showing extracted tasks"></div>
             <div class="slideshow-item"><img src="./static/daily_summary.PNG" alt="MinA Daily Task Summary"></div>
-            <div class="slideshow-item"><img src="./static/business_card_info.PNG" alt="MinA image OCR"></div>
-            <div class="slideshow-item"><img src="./static/handwritten_extraction.PNG" alt="MinA hnadwritten "></div>
-            <div class="slideshow-item"><img src="./static/location.PNG" alt="MinA location Selection"></div>
-            <div class="slideshow-item"><img src="./static/weekly_summary.PNG" alt="MinA weekly Task Summary"></div>
+            <div class="slideshow-item"><img src="./static/mina_ss_1.png" alt="MinA Voice Note Upload"></div>
+            <div class="slideshow-item"><img src="./static/mina_ss_2.png" alt="MinA Language Selection"></div>
           </div>
         </div>
-      </div>
-      
-      <div style="margin-top: 40px; font-size: 14px; color: var(--text-muted);">
-        TRUSTED BY EMPLOYEES AT <br>
-        <span style="font-weight: 700; color: #cbd5e1; font-size: 18px; letter-spacing: 2px; margin-top: 8px; display: inline-block;">SALES TEAMS • OPERATIONS MANAGERS • FREELANCERS</span>
       </div>
     </div>
   </section>
@@ -417,87 +421,110 @@
     </div>
     
     <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; text-align: center;">
-      
       <div style="padding: 20px;">
         <div style="font-size: 48px; margin-bottom: 20px;">🗣️</div>
         <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">1. Speak or Snap</h3>
         <p style="color: var(--text-muted);">Send a voice note in Hinglish, share your live location, or take a photo of a visiting card.</p>
       </div>
-
       <div style="padding: 20px;">
         <div style="font-size: 48px; margin-bottom: 20px;">🤖</div>
         <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">2. MinA Processes</h3>
         <p style="color: var(--text-muted);">MinA extracts action items, saves contacts, and logs visits instantly using AI.</p>
       </div>
-
       <div style="padding: 20px;">
         <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
         <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">3. Just Reply "1"</h3>
         <p style="color: var(--text-muted);">MinA sends a numbered list. Reply "1" to confirm, "2" to snooze. No typing needed.</p>
       </div>
-
     </div>
   </section>
 
-  <section id="features" class="container" style="padding: 60px 24px;">
+  <section id="features" class="container" style="padding: 80px 24px;">
     <div class="section-title">
       <h2>Everything you need. <span class="gradient-text">Nothing to install.</span></h2>
       <p style="color: var(--text-muted);">We stripped away the dashboard. You just chat.</p>
     </div>
 
-    <div class="bento-grid">
-      <div class="bento-card span-2">
-        <div class="bento-icon">📍</div>
-        <h3>Geo-Verified Check-ins</h3>
-        <p>Field sales? Just share your <strong>Live Location</strong>. MinA logs your visits automatically with a timestamp. No fake reports.</p>
-        <div class="bento-phone-container">
-            <div class="bento-phone iphone-frame">
-                <img src="./static/location.PNG" class="bento-img" style="object-fit: cover; object-position: top;" alt="Language selection">
+    <div class="feature-row">
+        <div class="feature-visual">
+            <div class="iphone-frame phone-mockup">
+                 <img src="./static/tasks_list.PNG" style="width:100%; height:auto;" alt="Location Check-in">
             </div>
         </div>
-      </div>
-
-      <div class="bento-card">
-           <div class="bento-icon">📸</div>
-           <h3>Image Intelligence (OCR)</h3>
-           <p>Snap a photo of a <strong>visiting card</strong> to save a contact, or a <strong>handwritten bill</strong> to set a payment reminder.</p>
-           <div class="bento-phone-container">
-        <div class="bento-phone iphone-frame">
-            <div class="slideshow-container">
-                <div class="slideshow-item"><img src="./static/business_card_info.PNG" alt="OCR Business Card Extraction"></div>
-                <div class="slideshow-item"><img src="./static/handwritten_extraction.PNG" alt="OCR Handwritten Extraction"></div>
-                <div class="slideshow-item"><img src="./static/create_tasks_handwritten.PNG" alt="OCR Task Creation from Image"></div>
-            </div>
+        <div class="feature-text">
+            <div class="feature-icon">📍</div>
+            <h3>Geo-Verified Check-ins</h3>
+            <p>Field sales? Just share your <strong>Live Location</strong> on WhatsApp. MinA logs your visits automatically with a timestamp and address. No fake reports. Perfect for sales teams.</p>
         </div>
     </div>
-</div>
 
-      <div class="bento-card">
-        <div class="bento-icon">🔢</div>
-        <h3>Simple Numbered Responses</h3>
-        <p>Don't type complex commands. Just reply "1" to mark done, "2" to snooze. Designed for busy hands.</p>
-        <div class="bento-phone-container">
-            <div class="bento-phone iphone-frame">
-                <img src="./static/create_tasks_handwritten.PNG" class="bento-img" style="object-fit: cover; object-position: top;" alt="Language selection">
+    <div class="feature-row reverse">
+        <div class="feature-visual">
+            <div class="iphone-frame phone-mockup">
+                 <div class="slideshow-container">
+                    <div class="slideshow-item"><img src="./static/business_card_info.PNG" alt="OCR Business Card Extraction"></div>
+                    <div class="slideshow-item"><img src="./static/handwritten_extraction.PNG" alt="OCR Handwritten Extraction"></div>
+                    <div class="slideshow-item"><img src="./static/create_tasks_handwritten.PNG" alt="OCR Task Creation from Image"></div>
+                 </div>
             </div>
         </div>
-      </div>
-      </div>
-
-      <div class="bento-card">
-        <div class="bento-icon">✅</div>
-        <h3>Auto-Task Extraction</h3>
-        <p>MinA listens to voice notes for "I will do X by Friday" and creates tasks. It supports <strong>Hinglish, Tamil, Marathi</strong> and more.</p>
-        <div class="bento-phone-container">
-             <div class="bento-phone iphone-frame">
-                <img src="./static/daily_summary.PNG" class="bento-img" style="object-fit: cover; object-position: center;" alt="Daily Task Summary">
-            </div>
+        <div class="feature-text">
+            <div class="feature-icon">📸</div>
+            <h3>Image Intelligence (OCR)</h3>
+            <p>Don't type. Snap a photo of a <strong>visiting card</strong> to save a contact instantly. Take a picture of a <strong>handwritten bill</strong> to set a payment reminder. MinA sees what you see.</p>
         </div>
-      </div>
     </div>
+
+    <div class="feature-row">
+        <div class="feature-visual">
+            <div class="chat-ui">
+                <div class="chat-msg">
+                    <strong>🔔 Reminder: Call Client</strong><br>
+                    1️⃣ Mark Done<br>
+                    2️⃣ Snooze 1hr<br>
+                    3️⃣ Reschedule
+                </div>
+                <div class="chat-reply">2</div>
+                <div class="chat-msg">✅ Snoozed for 1 hour.</div>
+            </div>
+        </div>
+        <div class="feature-text">
+            <div class="feature-icon">🔢</div>
+            <h3>Simple Numbered Responses</h3>
+            <p>Stop typing complex commands. MinA talks to you in numbered lists. Just reply "1" to mark done, "2" to snooze, or "3" to reschedule. Designed for busy hands.</p>
+        </div>
+    </div>
+
+    <div class="feature-row reverse">
+        <div class="feature-visual">
+            <div class="iphone-frame phone-mockup">
+                 <img src="./static/daily_summary.PNG" style="width:100%; height:auto;" alt="Auto Task Extraction">
+            </div>
+        </div>
+        <div class="feature-text">
+            <div class="feature-icon">✅</div>
+            <h3>Auto-Task Extraction</h3>
+            <p>MinA listens to voice notes for "I will do X by Friday" and instantly creates a task list. It supports <strong>Hinglish, Tamil, Marathi</strong>, and 6 other Indian languages.</p>
+        </div>
+    </div>
+
   </section>
 
-  <section id="stories" class="container" style="padding: 60px 24px; border-top: 1px solid var(--border);">
+  <section style="background: #F0FDF4; padding: 60px 24px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);">
+      <div class="container text-center">
+          <div style="display:inline-flex; align-items:center; gap:12px; margin-bottom:16px;">
+               <div style="font-size:32px;">🔒</div>
+               <h2 style="margin:0; font-size:28px;">Your Data is Safe.</h2>
+          </div>
+          <p style="max-width:600px; margin:0 auto; color:var(--text-muted);">
+              We know WhatsApp contains your business secrets. That's why MinA uses <strong>AES-256 Banking-Grade Encryption</strong>. 
+              <br><br>
+              <span style="background:#fff; padding:4px 12px; border-radius:6px; font-weight:700; color:#059669; border:1px solid #059669;">We DO NOT train public AI models on your client data.</span>
+          </p>
+      </div>
+  </section>
+
+  <section id="stories" class="container" style="padding: 80px 24px;">
     <div class="section-title">
         <h2>Success Stories from the Field</h2>
         <p style="color:var(--text-muted);">See how professionals save 2+ hours every day.</p>
@@ -536,50 +563,6 @@
     </div>
   </section>
 
-  <section class="container" style="padding: 60px 24px;">
-      <div class="section-title">
-          <h2>Why choose MinA?</h2>
-      </div>
-      <div style="overflow-x: auto;">
-        <table class="compare-table">
-            <thead>
-                <tr>
-                    <th>Feature</th>
-                    <th class="brand-col">MinA AI</th>
-                    <th>Typical Notes App</th>
-                    <th>Human Assistant</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td>App Installation Required?</td>
-                    <td class="brand-col">No (WhatsApp)</td>
-                    <td>Yes</td>
-                    <td>No</td>
-                </tr>
-                <tr>
-                    <td>Auto-Task from Voice</td>
-                    <td><span class="check">✓</span> Yes (9 Langs)</td>
-                    <td><span class="cross">✖</span> No</td>
-                    <td><span class="check">✓</span> Yes</td>
-                </tr>
-                <tr>
-                    <td>Location Check-ins</td>
-                    <td><span class="check">✓</span> Yes</td>
-                    <td><span class="cross">✖</span> No</td>
-                    <td><span class="cross">✖</span> No</td>
-                </tr>
-                <tr>
-                    <td>Cost per Month</td>
-                    <td class="brand-col">₹0 - ₹299</td>
-                    <td>Free</td>
-                    <td>₹15,000+</td>
-                </tr>
-            </tbody>
-        </table>
-      </div>
-  </section>
-
   <section id="pricing" class="container" style="padding: 80px 24px;">
     <div class="section-title">
       <h2>Simple Pricing</h2>
@@ -587,12 +570,10 @@
     </div>
     
     <div class="pricing-grid">
-        
         <div class="price-card">
             <div class="plan-name">Free</div>
             <div class="price-tag">₹0</div>
             <div class="price-sub">Forever</div>
-            
             <ul class="feature-list">
                 <li><span class="check">✓</span> 15 mins Voice/mo</li>
                 <li><span class="check">✓</span> 3 OCR Scans/mo</li>
@@ -602,42 +583,33 @@
             </ul>
             <a href="https://wa.me/12545365395?text=Hi%20MinA" class="btn btn-secondary btn-block" target="_blank">Start Free</a>
         </div>
-
         <div class="price-card highlight">
             <div class="best-value-badge">BEST VALUE</div>
-            <div class="plan-name">Basic</div>
+            <div class="plan-name">Assistant</div>
             <div class="price-tag">₹299</div>
             <div class="price-sub">per month</div>
-            
             <ul class="feature-list">
                 <li><span class="check">✓</span> <strong>90 mins</strong> Voice (6x!)</li>
                 <li><span class="check">✓</span> <strong>40 OCR Scans</strong> (13x!)</li>
                 <li><span class="check">✓</span> <strong>75 Check-ins</strong> (15x!)</li>
-                <li><span class="check">✓</span> 150 Contacts Storage</li>
+                <li><span class="check">✓</span> <strong>150 Contacts</strong> Storage(15x!)</li>
                 <li><span class="check">✓</span> Priority Support</li>
             </ul>
-            <a href="https://rzp.io/rzp/X6bzLXmD" class="btn btn-primary btn-block" target="_blank">Get Basic</a>
+            <a href="https://rzp.io/rzp/X6bzLXmD" class="btn btn-primary btn-block" target="_blank">Get Assistant</a>
         </div>
-
         <div class="price-card">
-            <div class="plan-name">Premium</div>
+            <div class="plan-name">Chief of Staff</div>
             <div class="price-tag">₹499</div>
             <div class="price-sub">per month</div>
-            
             <ul class="feature-list">
                 <li><span class="check">✓</span> <strong>Unlimited</strong> Voice</li>
                 <li><span class="check">✓</span> <strong>Unlimited</strong> OCR Scans</li>
                 <li><span class="check">✓</span> <strong>Unlimited</strong> Check-ins</li>
-                <li><span class="check">✓</span> Unlimited Contacts</li>
-                <li><span class="check">✓</span> VIP Support</li>
+                <li><span class="check">✓</span> <strong>Unlimited</strong> Contacts</li>
+                <li><span class="check">✓</span> <strong>VIP Support</strong>
             </ul>
-            <a href="https://rzp.io/rzp/X6bzLXmD" class="btn btn-secondary btn-block" target="_blank">Get Premium</a>
+            <a href="https://rzp.io/rzp/ioFxwdz" class="btn btn-secondary btn-block" target="_blank">Get Chief of Staff</a>
         </div>
-
-    </div>
-    
-    <div style="text-align: center; margin-top: 30px;">
-        <p style="font-size: 13px; color: var(--text-muted);">🔒 Enterprise-Grade Security (AES-256). We do NOT train AI on your data.</p>
     </div>
   </section>
 
@@ -662,12 +634,6 @@
               <button class="acc-btn">Is my business data safe?</button>
               <div class="acc-content">
                   <p>Yes. We use AES-256 encryption for all data. Unlike free tools, we do NOT use your private client voice notes to train public AI models.</p>
-              </div>
-          </div>
-          <div class="acc-item">
-              <button class="acc-btn">Can I cancel anytime?</button>
-              <div class="acc-content">
-                  <p>Absolutely. You can cancel your subscription instantly via WhatsApp or the payment link. No questions asked.</p>
               </div>
           </div>
       </div>
