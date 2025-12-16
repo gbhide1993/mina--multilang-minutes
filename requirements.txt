@@ -13,4 +13,7 @@ ffmpeg-python
 cryptography 
 apscheduler
 python-dateutil
+Pillow
+pytesseract
+
 
