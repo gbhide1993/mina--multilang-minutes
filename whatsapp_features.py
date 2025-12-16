@@ -202,7 +202,7 @@ def handle_location_message(phone, latitude, longitude, address=None):
         # Create a task for the location visit
         task_title = f"Site visit - {address or 'Location'}"
         create_task(
-            phone=phone,
+            phone,
             title=task_title,
             description=f"Checked in at {timestamp}",
             priority=2,
@@ -266,6 +266,21 @@ def extract_text_from_image(image_url):
     """Extract text from image using OCR"""
     try:
         import openai
+        from twilio.rest import Client
+        import base64
+        
+        # Download image from Twilio with authentication
+        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        
+        response = requests.get(image_url, auth=(account_sid, auth_token))
+        if response.status_code != 200:
+            print(f"Failed to download image: {response.status_code}")
+            return None
+            
+        # Convert to base64 for OpenAI
+        image_base64 = base64.b64encode(response.content).decode('utf-8')
+        image_data_url = f"data:image/jpeg;base64,{image_base64}"
         
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         
@@ -281,7 +296,7 @@ def extract_text_from_image(image_url):
                         },
                         {
                             "type": "image_url",
-                            "image_url": {"url": image_url}
+                            "image_url": {"url": image_data_url}
                         }
                     ]
                 }
@@ -360,7 +375,7 @@ def handle_button_response(phone, button_id):
         elif button_id.startswith("call_"):
             contact_number = button_id.replace("call_", "")
             create_task(
-                phone=phone,
+                phone,
                 title=f"Call {contact_number}",
                 priority=2,
                 source='contact_card'
