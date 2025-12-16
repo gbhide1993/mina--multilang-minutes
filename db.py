@@ -257,13 +257,13 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_bots_user_status ON meeting_bots(user_id, status);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_bots_bot_id ON meeting_bots(bot_id);")
         
-        # NEW FEATURES TABLES
+        # NEW FEATURES TABLES (Create after users and tasks tables exist)
         
         # Location check-ins table
         cur.execute("""
         CREATE TABLE IF NOT EXISTS location_checkins (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_phone TEXT NOT NULL,
             latitude DECIMAL(10, 8),
             longitude DECIMAL(11, 8),
             address TEXT,
@@ -271,7 +271,7 @@ def init_db():
             checkout_time TIMESTAMP,
             notes TEXT,
             photos JSONB,
-            task_id INTEGER REFERENCES tasks(id),
+            task_id INTEGER,
             created_at TIMESTAMP DEFAULT NOW()
         );
         """)
@@ -296,7 +296,7 @@ def init_db():
         cur.execute("""
         CREATE TABLE IF NOT EXISTS image_activities (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_phone TEXT NOT NULL,
             image_url TEXT,
             extracted_text TEXT,
             activity_type VARCHAR(50),
@@ -309,7 +309,7 @@ def init_db():
         cur.execute("""
         CREATE TABLE IF NOT EXISTS user_activities (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_phone TEXT NOT NULL,
             activity_type VARCHAR(50) NOT NULL,
             activity_data JSONB,
             source VARCHAR(50) DEFAULT 'whatsapp',
@@ -321,21 +321,21 @@ def init_db():
         cur.execute("""
         CREATE TABLE IF NOT EXISTS custom_reminders (
             id SERIAL PRIMARY KEY,
-            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            user_phone TEXT NOT NULL,
             reminder_text TEXT NOT NULL,
             remind_at TIMESTAMP NOT NULL,
             sent BOOLEAN DEFAULT FALSE,
             sent_at TIMESTAMP,
-            source_meeting_id INTEGER REFERENCES meeting_notes(id),
+            source_meeting_id INTEGER,
             created_at TIMESTAMP DEFAULT NOW()
         );
         """)
         
         # Create indexes for new tables
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_location_checkins_user_time ON location_checkins(user_id, checkin_time);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_location_checkins_user_time ON location_checkins(user_phone, checkin_time);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_contacts_user_phone ON contacts(user_phone);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_image_activities_user_type ON image_activities(user_id, activity_type);")
-        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_activities_user_type ON user_activities(user_id, activity_type, created_at);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_image_activities_user_type ON image_activities(user_phone, activity_type);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_activities_user_type ON user_activities(user_phone, activity_type, created_at);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_custom_reminders_remind_at ON custom_reminders(remind_at, sent);")
         
         conn.commit()
@@ -721,13 +721,12 @@ def get_user_language(phone):
 
 def log_location_checkin(phone, latitude, longitude, address=None, task_id=None):
     """Log location check-in to database"""
-    user = get_or_create_user(phone)
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            INSERT INTO location_checkins (user_id, latitude, longitude, address, task_id, checkin_time)
+            INSERT INTO location_checkins (user_phone, latitude, longitude, address, task_id, checkin_time)
             VALUES (%s, %s, %s, %s, %s, now())
             RETURNING *
-        """, (user['id'], latitude, longitude, address, task_id))
+        """, (phone, latitude, longitude, address, task_id))
         row = cur.fetchone()
         conn.commit()
         return dict(row) if row else None
@@ -751,39 +750,36 @@ def log_contact_save(phone, contact_name, contact_number, contact_email=None, co
 
 def log_image_activity(phone, image_url, extracted_text, activity_type, result_data=None):
     """Log image OCR activity to database"""
-    user = get_or_create_user(phone)
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            INSERT INTO image_activities (user_id, image_url, extracted_text, activity_type, result_data)
+            INSERT INTO image_activities (user_phone, image_url, extracted_text, activity_type, result_data)
             VALUES (%s, %s, %s, %s, %s)
             RETURNING *
-        """, (user['id'], image_url, extracted_text, activity_type, json.dumps(result_data) if result_data else None))
+        """, (phone, image_url, extracted_text, activity_type, json.dumps(result_data) if result_data else None))
         row = cur.fetchone()
         conn.commit()
         return dict(row) if row else None
 
 def log_user_activity(phone, activity_type, activity_data=None, source='whatsapp'):
     """Log general user activity to database"""
-    user = get_or_create_user(phone)
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            INSERT INTO user_activities (user_id, activity_type, activity_data, source)
+            INSERT INTO user_activities (user_phone, activity_type, activity_data, source)
             VALUES (%s, %s, %s, %s)
             RETURNING *
-        """, (user['id'], activity_type, json.dumps(activity_data) if activity_data else None, source))
+        """, (phone, activity_type, json.dumps(activity_data) if activity_data else None, source))
         row = cur.fetchone()
         conn.commit()
         return dict(row) if row else None
 
 def save_custom_reminder(phone, reminder_text, remind_at, source_meeting_id=None):
     """Save custom reminder to database"""
-    user = get_or_create_user(phone)
     with get_conn() as conn, conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute("""
-            INSERT INTO custom_reminders (user_id, reminder_text, remind_at, source_meeting_id)
+            INSERT INTO custom_reminders (user_phone, reminder_text, remind_at, source_meeting_id)
             VALUES (%s, %s, %s, %s)
             RETURNING *
-        """, (user['id'], reminder_text, remind_at, source_meeting_id))
+        """, (phone, reminder_text, remind_at, source_meeting_id))
         row = cur.fetchone()
         conn.commit()
         return dict(row) if row else None
