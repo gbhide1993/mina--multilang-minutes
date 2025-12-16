@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>MinA — The WhatsApp Meeting AI</title>
-  <meta name="description" content="Stop taking notes. MinA works inside WhatsApp to transcribe meetings, extract tasks, and automate follow-ups in 9 Indian languages." />
+  <title>MinA — The AI Secretary that lives in your WhatsApp</title>
+  <meta name="description" content="Stop switching apps. MinA transcribes voice notes, extracts tasks, and automates follow-ups in 9 Indian languages. No installs. No logins." />
+  
   <link rel="icon" type="image/png" href="./static/logo.png">
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -394,10 +395,8 @@
           <div class="slideshow-container">
             <div class="slideshow-item"><img src="./static/tasks_list.PNG" alt="MinA Interface showing extracted tasks"></div>
             <div class="slideshow-item"><img src="./static/daily_summary.PNG" alt="MinA Daily Task Summary"></div>
-            <div class="slideshow-item"><img src="./static/business_card_info.PNG" alt="MinA image OCR"></div>
-            <div class="slideshow-item"><img src="./static/create_tasks_handwritten.PNG" alt="MinA handwritten tasks"></div>
-            <div class="slideshow-item"><img src="./static/handwritten_extraction.PNG" alt="MinA handwritten recognition"></div>
-            <div class="slideshow-item"><img src="./static/location.PNG" alt="MinA location"></div>
+            <div class="slideshow-item"><img src="./static/mina_ss_1.png" alt="MinA Voice Note Upload"></div>
+            <div class="slideshow-item"><img src="./static/mina_ss_2.png" alt="MinA Language Selection"></div>
           </div>
         </div>
       </div>
@@ -406,6 +405,35 @@
         TRUSTED BY EMPLOYEES AT <br>
         <span style="font-weight: 700; color: #cbd5e1; font-size: 18px; letter-spacing: 2px; margin-top: 8px; display: inline-block;">SALES TEAMS • OPERATIONS MANAGERS • FREELANCERS</span>
       </div>
+    </div>
+  </section>
+
+  <section id="how" class="container" style="padding: 60px 24px; border-bottom: 1px solid var(--border);">
+    <div class="section-title">
+      <h2>Three Steps to <span class="gradient-text">Freedom</span></h2>
+      <p style="color: var(--text-muted);">No apps to learn. If you know WhatsApp, you know MinA.</p>
+    </div>
+    
+    <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 40px; text-align: center;">
+      
+      <div style="padding: 20px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">🗣️</div>
+        <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">1. Speak or Snap</h3>
+        <p style="color: var(--text-muted);">Send a voice note in Hinglish, share your live location, or take a photo of a visiting card.</p>
+      </div>
+
+      <div style="padding: 20px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">🤖</div>
+        <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">2. MinA Processes</h3>
+        <p style="color: var(--text-muted);">MinA extracts action items, saves contacts, and logs visits instantly using AI.</p>
+      </div>
+
+      <div style="padding: 20px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">✅</div>
+        <h3 style="font-size: 20px; font-weight: 700; margin-bottom: 12px;">3. Just Reply "1"</h3>
+        <p style="color: var(--text-muted);">MinA sends a numbered list. Reply "1" to confirm, "2" to snooze. No typing needed.</p>
+      </div>
+
     </div>
   </section>
 
@@ -422,7 +450,7 @@
         <p>Field sales? Just share your <strong>Live Location</strong>. MinA logs your visits automatically with a timestamp. No fake reports.</p>
         <div class="bento-phone-container">
             <div class="bento-phone iphone-frame">
-                <img src="./static/location.PNG" class="bento-img" style="object-fit: cover; object-position: top;" alt="Language selection">
+                <img src="./static/languages.PNG" class="bento-img" style="object-fit: cover; object-position: top;" alt="Language selection">
             </div>
         </div>
       </div>
@@ -431,22 +459,12 @@
         <div class="bento-icon">📸</div>
         <h3>Image Intelligence (OCR)</h3>
         <p>Snap a photo of a <strong>visiting card</strong> to save a contact, or a <strong>handwritten bill</strong> to set a payment reminder.</p>
-        <div class="bento-phone-container">
-            <div class="bento-phone iphone-frame">
-                <img src="./static/business_card_info.PNG" class="bento-img" style="object-fit: cover; object-position: top;" alt="Language selection">
-            </div>
-        </div>
       </div>
 
       <div class="bento-card">
         <div class="bento-icon">🔢</div>
         <h3>Simple Numbered Responses</h3>
         <p>Don't type complex commands. Just reply "1" to mark done, "2" to snooze. Designed for busy hands.</p>
-        <div class="bento-phone-container">
-            <div class="bento-phone iphone-frame">
-                <img src="./static/handwritten_extraction.PNG" class="bento-img" style="object-fit: cover; object-position: top;" alt="Language selection">
-            </div>
-        </div>
       </div>
 
       <div class="bento-card span-2">
@@ -529,22 +547,10 @@
                     <td><span class="check">✓</span> Yes</td>
                 </tr>
                 <tr>
-                    <td>Image Intelligence</td>
-                    <td><span class="check">✓</span> Yes </td>
-                    <td><span class="cross">✖</span> No</td>
-                    <td><span class="cross">✖</span> No</td>
-                </tr>
-                <tr>
                     <td>Location Check-ins</td>
                     <td><span class="check">✓</span> Yes</td>
                     <td><span class="cross">✖</span> No</td>
                     <td><span class="cross">✖</span> No</td>
-                </tr>
-                <tr>
-                    <td>Summary in 9 Languages</td>
-                    <td><span class="check">✓</span> Yes</td>
-                    <td><span class="cross">✖</span> No</td>
-                    <td><span class="check">✓</span> Yes</td>
                 </tr>
                 <tr>
                     <td>Cost per Month</td>
