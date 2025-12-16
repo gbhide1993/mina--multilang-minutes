@@ -35,7 +35,6 @@ from db_multilang import init_multilang_db, set_user_language, get_user_language
 from language_handler_v2 import get_language_menu, parse_language_choice, get_language_name
 import re
 from payments import create_payment_link_for_phone, handle_webhook_event, verify_razorpay_webhook
-from subscription_api import add_subscription_routes
 
 # New imports for API endpoints
 from werkzeug.utils import secure_filename
@@ -91,8 +90,7 @@ app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
 from scheduler_setup import init_scheduler
 init_scheduler(app)
 
-# Add subscription routes
-add_subscription_routes(app)
+# Subscription routes removed - using direct links
 
 # Create temp directory for audio files
 TEMP_DIR = os.getenv("TEMP_DIR", os.getcwd())
