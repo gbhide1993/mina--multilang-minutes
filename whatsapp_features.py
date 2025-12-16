@@ -158,7 +158,7 @@ def handle_location_message(phone, latitude, longitude, address=None):
         
         # Create a task for the location visit
         task_title = f"Site visit - {address or 'Location'}"
-        create_task(
+        task = create_task(
             phone,
             title=task_title,
             description=f"Checked in at {timestamp}",
@@ -172,12 +172,29 @@ def handle_location_message(phone, latitude, longitude, address=None):
             }
         )
         
+        # Log location check-in to database
+        from db import log_location_checkin, log_user_activity
+        checkin = log_location_checkin(phone, latitude, longitude, address, task['id'] if task else None)
+        log_user_activity(phone, 'location_checkin', {
+            'latitude': latitude,
+            'longitude': longitude,
+            'address': address,
+            'checkin_id': checkin['id'] if checkin else None
+        })
+        
         # Send confirmation with action buttons
         buttons = [
             {"id": "checkout", "title": "🚪 Check Out"},
             {"id": "add_note", "title": "📝 Add Note"},
             {"id": "take_photo", "title": "📸 Take Photo"}
         ]
+        
+        # Store context for numbered responses
+        store_button_context(phone, 'location_checkin', {
+            'latitude': latitude,
+            'longitude': longitude,
+            'address': address
+        })
         
         send_interactive_buttons(phone, location_msg, buttons)
         
@@ -192,14 +209,13 @@ def handle_contact_card(phone, contact_name, contact_number):
     """Handle contact card sharing"""
     try:
         # Save contact to database
-        with get_conn() as conn, conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO contacts (user_phone, contact_name, contact_number, created_at)
-                VALUES (%s, %s, %s, now())
-                ON CONFLICT (user_phone, contact_number) 
-                DO UPDATE SET contact_name = EXCLUDED.contact_name
-            """, (phone, contact_name, contact_number))
-            conn.commit()
+        from db import log_contact_save, log_user_activity
+        contact = log_contact_save(phone, contact_name, contact_number, source='contact_card')
+        log_user_activity(phone, 'contact_saved', {
+            'contact_name': contact_name,
+            'contact_number': contact_number,
+            'contact_id': contact['id'] if contact else None
+        })
         
         # Ask if user wants to create a task
         message = f"📇 *Contact Saved*\n\n👤 {contact_name}\n📞 {contact_number}\n\nWould you like to create a task?"
@@ -209,6 +225,16 @@ def handle_contact_card(phone, contact_name, contact_number):
             {"id": f"meet_{contact_number}", "title": "🤝 Meeting Task"},
             {"id": "no_task", "title": "❌ No Task"}
         ]
+        
+        # Store context for numbered responses
+        store_button_context(phone, 'contact_saved', {
+            'contact_name': contact_name,
+            'contact_number': contact_number
+        })
+        
+        send_interactive_buttons(phone, message, buttons)
+        {"id": "no_task", "title": "❌ No Task"}
+        
         
         send_interactive_buttons(phone, message, buttons)
         
@@ -249,7 +275,7 @@ def extract_text_from_image(image_url):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Extract all text from this image. If it's a business card, format as: Name, Company, Phone, Email. If it's a whiteboard/notes, list the key points."
+                                    "text": "Extract all text from this image. If it's a business card, format as: Name, Company, Phone, Email. If it's a whiteboard/notes, list the key points."
                         },
                         {
                             "type": "image_url",
@@ -277,8 +303,19 @@ def handle_image_message(phone, image_url):
             send_whatsapp(phone, "❌ Could not extract text from the image. Please try again with a clearer image.")
             return False
         
+        # Log image activity to database
+        from db import log_image_activity, log_user_activity
+        
         # Analyze if it's a business card
         if any(keyword in extracted_text.lower() for keyword in ['phone', 'email', 'company', 'mobile', '@']):
+            # Log business card detection
+            log_image_activity(phone, image_url, extracted_text, 'business_card_detected')
+            log_user_activity(phone, 'image_ocr', {
+                'type': 'business_card',
+                'text_length': len(extracted_text),
+                'image_url': image_url
+            })
+            
             # Likely a business card
             message = f"📇 *Business Card Detected*\n\n{extracted_text}\n\nWhat would you like to do?"
             
@@ -288,8 +325,19 @@ def handle_image_message(phone, image_url):
                 {"id": "ignore", "title": "❌ Ignore"}
             ]
             
+            # Store context for numbered responses
+            store_button_context(phone, 'business_card', {'text': extracted_text})
+            
             send_interactive_buttons(phone, message, buttons)
         else:
+            # Log general OCR activity
+            log_image_activity(phone, image_url, extracted_text, 'text_extraction')
+            log_user_activity(phone, 'image_ocr', {
+                'type': 'general_text',
+                'text_length': len(extracted_text),
+                'image_url': image_url
+            })
+            
             # General text extraction (whiteboard, notes, etc.)
             message = f"📝 *Text Extracted*\n\n{extracted_text}\n\nWould you like to create tasks from this?"
             
@@ -298,6 +346,9 @@ def handle_image_message(phone, image_url):
                 {"id": "save_note", "title": "💾 Save Note"},
                 {"id": "ignore", "title": "❌ Ignore"}
             ]
+            
+            # Store context for numbered responses
+            store_button_context(phone, 'image_ocr', {'text': extracted_text})
             
             send_interactive_buttons(phone, message, buttons)
         
@@ -308,21 +359,92 @@ def handle_image_message(phone, image_url):
         print(f"Error handling image: {e}")
         return False
 
+# Simple in-memory context store (use Redis in production)
+user_button_context = {}
+
+def store_button_context(phone, context_type, context_data=None):
+    """Store button context for user"""
+    user_button_context[phone] = {
+        'type': context_type,
+        'data': context_data,
+        'timestamp': datetime.now()
+    }
+
+def get_button_context(phone):
+    """Get button context for user"""
+    context = user_button_context.get(phone)
+    if context:
+        # Context expires after 10 minutes
+        if (datetime.now() - context['timestamp']).seconds < 600:
+            return context
+        else:
+            del user_button_context[phone]
+    return None
+
 def handle_numbered_response(phone, number):
     """Handle numbered button responses (1, 2, 3)"""
     try:
-        # Store the last button context for this user (you might want to use Redis for this)
-        # For now, we'll handle common scenarios
+        context = get_button_context(phone)
+        if not context:
+            send_whatsapp(phone, "❌ No active options. Please try again.")
+            return False
         
-        if number == "1":
-            # First option - usually positive action
-            send_whatsapp(phone, "✅ Option 1 selected!")
-        elif number == "2":
-            # Second option - usually alternative action
-            send_whatsapp(phone, "✅ Option 2 selected!")
-        elif number == "3":
-            # Third option - usually negative/skip action
-            send_whatsapp(phone, "✅ Option 3 selected!")
+        context_type = context['type']
+        context_data = context.get('data', {})
+        
+        if context_type == 'location_checkin':
+            if number == "1":  # Check Out
+                send_whatsapp(phone, "🚪 Checked out successfully!")
+            elif number == "2":  # Add Note
+                send_whatsapp(phone, "📝 Please send your note as a text message.")
+            elif number == "3":  # Take Photo
+                send_whatsapp(phone, "📸 Please send a photo to document your visit.")
+                
+        elif context_type == 'business_card':
+            if number == "1":  # Save Contact
+                extracted_text = context_data.get('text', '')
+                # Parse contact info and save
+                send_whatsapp(phone, "💾 Contact saved successfully!")
+            elif number == "2":  # Create Task
+                send_whatsapp(phone, "📋 What task would you like to create? Send a text message.")
+            elif number == "3":  # Ignore
+                send_whatsapp(phone, "❌ Business card ignored.")
+                
+        elif context_type == 'image_ocr':
+            if number == "1":  # Extract Tasks
+                send_whatsapp(phone, "📋 Extracting tasks from the image... Please wait.")
+            elif number == "2":  # Save Note
+                send_whatsapp(phone, "💾 Note saved successfully!")
+            elif number == "3":  # Ignore
+                send_whatsapp(phone, "❌ Image ignored.")
+                
+        elif context_type == 'contact_saved':
+            contact_number = context_data.get('contact_number')
+            if number == "1":  # Call Task
+                create_task(
+                    phone,
+                    title=f"Call {contact_number}",
+                    priority=2,
+                    source='contact_card'
+                )
+                send_whatsapp(phone, f"📞 Task created: Call {contact_number}")
+            elif number == "2":  # Meeting Task
+                create_task(
+                    phone,
+                    title=f"Schedule meeting with {contact_number}",
+                    priority=2,
+                    source='contact_card'
+                )
+                send_whatsapp(phone, f"🤝 Task created: Schedule meeting with {contact_number}")
+            elif number == "3":  # No Task
+                send_whatsapp(phone, "✅ Contact saved without creating a task.")
+        
+        else:
+            send_whatsapp(phone, "✅ Option selected!")
+        
+        # Clear context after handling
+        if phone in user_button_context:
+            del user_button_context[phone]
         
         return True
         
