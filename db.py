@@ -151,6 +151,10 @@ def init_db():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_meeting_notes_message_sid ON meeting_notes (message_sid);")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_payments_reference_id ON payments (reference_id);")
 
+        # Add conversational state columns (CRITICAL FOR MEMORY)
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS current_state VARCHAR(100);")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS state_metadata JSONB DEFAULT '{}';")
+
         # If you want to enforce uniqueness for non-null message_sid values (strong dedupe),
         # create a unique partial index:
         cur.execute("""
@@ -975,3 +979,59 @@ def save_custom_reminder(phone, reminder_text, remind_at, source_meeting_id=None
         row = cur.fetchone()
         conn.commit()
         return dict(row) if row else None
+    
+
+# --- Conversational State Management (The Fix for "Amnesia") ---
+
+def set_user_state(phone, state, metadata=None):
+    """
+    Saves the user's current conversational state to the DB.
+    survives restarts.
+    """
+    phone = normalize_phone_for_db(phone)
+    if metadata is None:
+        metadata = {}
+        
+    with get_conn() as conn, conn.cursor() as cur:
+        # Ensure user exists first
+        get_or_create_user(phone)
+        
+        cur.execute("""
+            UPDATE users 
+            SET current_state = %s, 
+                state_metadata = %s 
+            WHERE phone = %s
+        """, (state, json.dumps(metadata), phone))
+        conn.commit()
+
+def get_user_state(phone):
+    """
+    Retrieves the user's state from the DB.
+    Returns (state_string, metadata_dict).
+    """
+    phone = normalize_phone_for_db(phone)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT current_state, state_metadata FROM users WHERE phone = %s", (phone,))
+        row = cur.fetchone()
+        
+        if row:
+            # Handle RealDictCursor or tuple
+            if isinstance(row, dict):
+                state = row.get('current_state')
+                meta = row.get('state_metadata')
+            else:
+                state = row[0]
+                meta = row[1]
+                
+            # Parse JSON if it comes back as a string (depends on driver)
+            if isinstance(meta, str):
+                try:
+                    meta = json.loads(meta)
+                except:
+                    meta = {}
+            if meta is None:
+                meta = {}
+                
+            return state, meta
+        
+    return None, {}
