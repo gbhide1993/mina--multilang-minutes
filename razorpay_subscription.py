@@ -49,7 +49,7 @@ def create_subscription_link(phone, plan="premium"):
         
         plan_config = plans.get(plan, plans["premium"])
         
-        # Create payment link directly (simpler than subscription)
+        # Create payment link with UPI enabled
         payment_link_data = {
             "amount": plan_config["amount"],
             "currency": "INR",
@@ -62,6 +62,16 @@ def create_subscription_link(phone, plan="premium"):
                 "whatsapp": True
             },
             "reminder_enable": True,
+            "options": {
+                "checkout": {
+                    "method": {
+                        "upi": True,
+                        "card": True,
+                        "netbanking": True,
+                        "wallet": True
+                    }
+                }
+            },
             "notes": {
                 "phone": phone,
                 "plan": plan
