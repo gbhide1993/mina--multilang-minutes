@@ -11,8 +11,9 @@ import os
 import json
 import requests
 from datetime import datetime, timedelta
-from utils import send_whatsapp
+from utils import send_whatsapp as _send_whatsapp
 from db import get_conn, create_task, get_user_by_phone
+
 
 def send_interactive_buttons(phone, message, buttons):
     """
@@ -42,53 +43,37 @@ def send_task_reminder_with_buttons(phone, task_id, task_title, due_date=None):
 
 def send_interactive_list(phone, title, sections):
     """
-    Send WhatsApp list message
-    sections = [{"title": "Today's Tasks", "rows": [{"id": "task1", "title": "Call John", "description": "Due 2 PM"}]}]
+    Send a text-based list (Twilio does not reliably support interactive JSON payloads here).
+    We intentionally do NOT attempt to send the Twilio interactive JSON; instead send a formatted text list.
     """
     try:
-        from twilio.rest import Client
-        
-        account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        from_number = os.getenv("TWILIO_WHATSAPP_FROM")
-        
-        client = Client(account_sid, auth_token)
-        
-        interactive_message = {
-            "type": "interactive",
-            "interactive": {
-                "type": "list",
-                "body": {"text": title},
-                "action": {
-                    "button": "View Tasks",
-                    "sections": sections
-                }
-            }
-        }
-        
-        msg = client.messages.create(
-            from_=from_number,
-            to=phone,
-            content_sid=None,
-            body=json.dumps(interactive_message)
-        )
-        
-        print(f"✅ Interactive list sent to {phone}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Failed to send interactive list: {e}")
-        # Fallback to regular message
+        # Build structured text fallback instead of interactive JSON
         fallback_msg = f"*{title}*\n\n"
         for section in sections:
-            fallback_msg += f"**{section['title']}**\n"
-            for row in section['rows']:
-                fallback_msg += f"• {row['title']}\n"
+            section_title = section.get('title') or ""
+            if section_title:
+                fallback_msg += f"{section_title}\n"
+            rows = section.get('rows', [])
+            for i, row in enumerate(rows, 1):
+                # prefer row['title'] but guard against missing keys
+                row_title = row.get('title') if isinstance(row, dict) else str(row)
+                fallback_msg += f"• {row_title}\n"
             fallback_msg += "\n"
+
+        fallback_msg += "Reply with the number to choose an option."
         return send_whatsapp(phone, fallback_msg)
 
+    except Exception as e:
+        print(f"❌ Failed to send interactive list (fallback): {e}")
+        # Last-ditch attempt to send a readable message
+        try:
+            return send_whatsapp(phone, "Here are your items. Reply with the number to choose an option.")
+        except Exception:
+            return False
+
+
 def send_morning_briefing_with_list(phone):
-    """Send morning briefing as interactive list"""
+    """Send morning briefing as structured text list"""
     try:
         user = get_user_by_phone(phone)
         if not user:
@@ -98,39 +83,57 @@ def send_morning_briefing_with_list(phone):
         tasks = get_tasks_for_user(user['id'], status='open', limit=10)
         
         if not tasks:
-            send_whatsapp(phone, "🌅 Good morning! You have no pending tasks today. Have a great day!")
+            send_whatsapp(phone, "📋 *Your Tasks*\n\nYou have no pending tasks! 🎉\n\nSend a voice note to create new tasks.")
             return True
         
-        # Group tasks by priority/due date
+        # Build structured message
+        message = f"📋 *Your Tasks* ({len(tasks)} pending)\n\n"
+        
+        today = datetime.now().date()
         today_tasks = []
         upcoming_tasks = []
         
-        today = datetime.now().date()
-        
         for task in tasks:
             due_date = task.get('due_at')
-            if due_date and datetime.fromisoformat(str(due_date)).date() == today:
-                today_tasks.append({
-                    "id": f"task_{task['id']}",
-                    "title": task['title'][:24],
-                    "description": f"Due today • ID: {task['id']}"
-                })
+            if due_date:
+                try:
+                    task_date = datetime.fromisoformat(str(due_date)).date()
+                    if task_date == today:
+                        today_tasks.append(task)
+                    else:
+                        upcoming_tasks.append(task)
+                except:
+                    upcoming_tasks.append(task)
             else:
-                upcoming_tasks.append({
-                    "id": f"task_{task['id']}",
-                    "title": task['title'][:24],
-                    "description": f"ID: {task['id']}"
-                })
+                upcoming_tasks.append(task)
         
-        sections = []
+        # Add today's tasks
         if today_tasks:
-            sections.append({"title": "📅 Due Today", "rows": today_tasks[:10]})
+            message += "📅 *Due Today:*\n"
+            for i, task in enumerate(today_tasks[:5], 1):
+                message += f"{i}. {task['title']}\n"
+            message += "\n"
+        
+        # Add upcoming tasks
         if upcoming_tasks:
-            sections.append({"title": "📋 Upcoming", "rows": upcoming_tasks[:10]})
+            message += "📋 *Upcoming:*\n"
+            start_num = len(today_tasks) + 1
+            for i, task in enumerate(upcoming_tasks[:5], start_num):
+                due_text = ""
+                if task.get('due_at'):
+                    try:
+                        due_date = datetime.fromisoformat(str(task['due_at']))
+                        due_text = f" (Due: {due_date.strftime('%m/%d')})"
+                    except:
+                        pass
+                message += f"{i}. {task['title']}{due_text}\n"
+            message += "\n"
         
-        title = f"🌅 Good morning! You have {len(tasks)} pending tasks."
+        message += "💡 Reply 'Done <number>' to mark complete\n"
+        message += "📝 Send voice note to add more tasks"
         
-        return send_interactive_list(phone, title, sections)
+        send_whatsapp(phone, message)
+        return True
         
     except Exception as e:
         print(f"Error sending morning briefing: {e}")
@@ -139,6 +142,14 @@ def send_morning_briefing_with_list(phone):
 def handle_location_message(phone, latitude, longitude, address=None):
     """Handle location sharing for check-in/out"""
     try:
+        # Check subscription limits
+        from db import check_feature_limit, get_upgrade_message, get_user_subscription_tier
+        can_use, limit_message = check_feature_limit(phone, 'location_checkins')
+        if not can_use:
+            tier = get_user_subscription_tier(phone)
+            upgrade_msg = get_upgrade_message(tier)
+            send_whatsapp(phone, f"🚫 {limit_message}\n\n{upgrade_msg}")
+            return False
         # Reverse geocode if no address provided
         if not address and latitude and longitude:
             try:
@@ -208,6 +219,14 @@ def handle_location_message(phone, latitude, longitude, address=None):
 def handle_contact_card(phone, contact_name, contact_number):
     """Handle contact card sharing"""
     try:
+        # Check subscription limits
+        from db import check_feature_limit, get_upgrade_message, get_user_subscription_tier
+        can_use, limit_message = check_feature_limit(phone, 'contacts_saved')
+        if not can_use:
+            tier = get_user_subscription_tier(phone)
+            upgrade_msg = get_upgrade_message(tier)
+            send_whatsapp(phone, f"🚫 {limit_message}\n\n{upgrade_msg}")
+            return False
         # Save contact to database
         from db import log_contact_save, log_user_activity
         contact = log_contact_save(phone, contact_name, contact_number, source='contact_card')
@@ -249,23 +268,41 @@ def extract_text_from_image(image_url):
     """Extract text from image using OCR"""
     try:
         import openai
-        from twilio.rest import Client
         import base64
+        
+        # Check if OpenAI API key exists
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            print("❌ OPENAI_API_KEY not found")
+            return None
         
         # Download image from Twilio with authentication
         account_sid = os.getenv("TWILIO_ACCOUNT_SID")
         auth_token = os.getenv("TWILIO_AUTH_TOKEN")
         
-        response = requests.get(image_url, auth=(account_sid, auth_token))
+        print(f"📥 Downloading image from: {image_url[:50]}...")
+        
+        # Add timeout and better error handling
+        response = requests.get(image_url, auth=(account_sid, auth_token), timeout=30)
         if response.status_code != 200:
-            print(f"Failed to download image: {response.status_code}")
+            print(f"❌ Failed to download image: HTTP {response.status_code}")
             return None
+        
+        print(f"✅ Image downloaded, size: {len(response.content)} bytes")
             
         # Convert to base64 for OpenAI
         image_base64 = base64.b64encode(response.content).decode('utf-8')
-        image_data_url = f"data:image/jpeg;base64,{image_base64}"
         
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        # Detect image format from content type or content
+        content_type = response.headers.get('Content-Type', 'image/jpeg')
+        if 'png' in content_type:
+            image_data_url = f"data:image/png;base64,{image_base64}"
+        else:
+            image_data_url = f"data:image/jpeg;base64,{image_base64}"
+        
+        print(f"🔄 Sending to OpenAI Vision API...")
+        
+        client = openai.OpenAI(api_key=openai_api_key)
         
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -275,7 +312,7 @@ def extract_text_from_image(image_url):
                     "content": [
                         {
                             "type": "text",
-                                    "text": "Extract all text from this image. If it's a business card, format as: Name, Company, Phone, Email. If it's a whiteboard/notes, list the key points."
+                            "text": "Extract all text from this image. If it's a business card, format as: Name, Company, Phone, Email. If it's a whiteboard/notes, list the key points."
                         },
                         {
                             "type": "image_url",
@@ -287,21 +324,41 @@ def extract_text_from_image(image_url):
             max_tokens=500
         )
         
-        return response.choices[0].message.content
+        extracted_text = response.choices[0].message.content
+        print(f"✅ OCR Success: {len(extracted_text)} characters extracted")
+        return extracted_text
         
     except Exception as e:
-        print(f"Error extracting text from image: {e}")
+        print(f"❌ Error extracting text from image: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
         return None
 
 def handle_image_message(phone, image_url):
     """Handle image messages for OCR and analysis"""
     try:
+        print(f"📸 Processing image for {phone}: {image_url}")
+        
+        # Check subscription limits
+        from db import check_feature_limit, get_upgrade_message, get_user_subscription_tier
+        can_use, limit_message = check_feature_limit(phone, 'image_ocr')
+        if not can_use:
+            tier = get_user_subscription_tier(phone)
+            upgrade_msg = get_upgrade_message(tier)
+            send_whatsapp(phone, f"🚫 {limit_message}\n\n{upgrade_msg}")
+            return False
+        
+        # Send processing message
+        send_whatsapp(phone, "📸 Processing your image... Extracting text...")
+        
         # Extract text from image
         extracted_text = extract_text_from_image(image_url)
         
         if not extracted_text:
-            send_whatsapp(phone, "❌ Could not extract text from the image. Please try again with a clearer image.")
+            send_whatsapp(phone, "❌ Could not extract text from the image. Please try again with a clearer image or check if the image contains readable text.")
             return False
+        
+        print(f"✅ Extracted text: {extracted_text[:100]}...")
         
         # Log image activity to database
         from db import log_image_activity, log_user_activity
@@ -356,7 +413,10 @@ def handle_image_message(phone, image_url):
         return True
         
     except Exception as e:
-        print(f"Error handling image: {e}")
+        print(f"❌ Error handling image: {e}")
+        import traceback
+        print(f"📋 Traceback: {traceback.format_exc()}")
+        send_whatsapp(phone, "❌ Sorry, there was an error processing your image. Please try again.")
         return False
 
 # Simple in-memory context store (use Redis in production)
