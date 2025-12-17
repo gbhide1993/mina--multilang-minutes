@@ -733,6 +733,38 @@ def get_user_language(phone):
     user = get_user(phone)
     return user.get('preferred_language', 'hi') if user else 'hi'
 
+def update_user_language(phone: str, language_code: str):
+    """
+    Set or update the user's preferred language in the users table.
+    Returns the updated row as a dict (id, phone, language) or None on failure.
+    """
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            # Try to update existing user
+            cur.execute(
+                "UPDATE users SET language = %s WHERE phone = %s RETURNING id, phone, language",
+                (language_code, phone)
+            )
+            row = cur.fetchone()
+            if row:
+                conn.commit()
+                return {"id": row[0], "phone": row[1], "language": row[2]}
+
+            # If no existing row, insert new (safe fallback)
+            cur.execute(
+                "INSERT INTO users (phone, language) VALUES (%s, %s) RETURNING id, phone, language",
+                (phone, language_code)
+            )
+            row = cur.fetchone()
+            conn.commit()
+            if row:
+                return {"id": row[0], "phone": row[1], "language": row[2]}
+
+    except Exception as e:
+        print("DB: update_user_language error:", e)
+    return None
+
+
 # SUBSCRIPTION TIER MANAGEMENT
 
 def get_user_subscription_tier(phone):
