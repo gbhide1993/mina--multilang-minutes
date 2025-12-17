@@ -35,6 +35,7 @@ from db_multilang import init_multilang_db, set_user_language, get_user_language
 from language_handler_v2 import get_language_menu, parse_language_choice, get_language_name
 import re
 from payments import create_payment_link_for_phone, handle_webhook_event, verify_razorpay_webhook
+from db import set_user_state, get_user_state, update_user_language
 
 # New imports for API endpoints
 from werkzeug.utils import secure_filename
@@ -336,9 +337,57 @@ def twilio_webhook():
         
         # Handle numbered button responses (1, 2, 3)
         if body_text and body_text.strip() in ['1', '2', '3']:
-            from whatsapp_features import handle_numbered_response
-            handle_numbered_response(sender, body_text.strip())
+            num_text = body_text.strip()
+            # 1) Check DB for a pending durable flow (language selection)
+            try:
+                pending_job = _get_pending_summary_job(sender)
+            except Exception as e:
+                debug_print("Error checking pending job for numeric reply:", e)
+                pending_job = None
+
+            if pending_job:
+                # Interpret numeric reply as a language choice for the pending summary
+                try:
+                    lang_choice = parse_language_choice(num_text)
+                    if not lang_choice:
+                        send_whatsapp(sender, "❌ Invalid choice. Please reply with 1, 2 or 3 from the language menu.")
+                        return ("", 204)
+
+                    meeting_id = pending_job['meeting_id']
+
+                    if queue:
+                        job = queue.enqueue(
+                            "worker_multilang_production_fixed_clean.complete_summary_job",
+                            meeting_id,
+                            lang_choice,
+                            job_timeout=60 * 60
+                        )
+                        if job:
+                            lang_name = get_language_name(lang_choice)
+                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
+                            debug_print(f"Enqueued summary job for meeting {meeting_id} language {lang_choice}")
+                        else:
+                            send_whatsapp(sender, "⚠️ Failed to start processing. Please try again.")
+                    else:
+                        send_whatsapp(sender, "⚠️ Service temporarily unavailable. Please try again later.")
+                except Exception as e:
+                    debug_print("Error handling numeric->language selection:", e, traceback.format_exc())
+                    send_whatsapp(sender, "⚠️ Could not process your selection. Please try again.")
+                return ("", 204)
+
+            # 2) No pending DB job: fallback to ephemeral handler (buttons/ocr/etc)
+            try:
+                from whatsapp_features import handle_numbered_response
+                handled = handle_numbered_response(sender, num_text)
+                if handled:
+                    return ("", 204)
+            except Exception as e:
+                debug_print("whatsapp_features.handle_numbered_response error:", e, traceback.format_exc())
+
+            # 3) Final fallback message
+            send_whatsapp(sender, "❌ No active options. Please try again.")
             return ("", 204)
+
         
         # Handle interactive button responses
         button_payload = request.values.get("ButtonPayload")
