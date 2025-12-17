@@ -1591,3 +1591,25 @@ def api_send_weekly_summary():
     except Exception as e:
         debug_print("api_send_weekly_summary error:", e, traceback.format_exc())
         return jsonify({"error": str(e)}), 500
+
+# --- Add these new routes to your app.py ---
+
+@app.route('/terms.html')
+def terms():
+    return render_template('terms.html')
+
+@app.route('/privacy.html')
+def privacy():
+    return render_template('privacy.html')
+
+@app.route('/refund.html')
+def refund():
+    return render_template('refund.html')
+
+@app.route('/shipping.html')
+def shipping():
+    return render_template('shipping.html')
+
+@app.route('/contact.html')
+def contact():
+    return render_template('contact.html')
