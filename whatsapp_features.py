@@ -11,7 +11,7 @@ import os
 import json
 import requests
 from datetime import datetime, timedelta
-from utils import send_whatsapp as _send_whatsapp
+from utils import send_whatsapp 
 from db import get_conn, create_task, get_user_by_phone
 
 
