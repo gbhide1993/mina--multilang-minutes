@@ -47,6 +47,21 @@ from encryption import encrypt_sensitive_data, decrypt_sensitive_data
 from openai_client_multilang import summarize_text_multilang, transcribe_file_multilang
 import json
 
+# --- Optional Billing Plugin ---
+try:
+    from billing_plugin import handle as billing_handle
+except Exception:
+    billing_handle = None
+
+# -------------------------------
+# Intent → Plugin mapping
+# -------------------------------
+
+BILLING_INTENT_MAP = {
+    "create_invoice": "billing",
+    "edit_invoice": "billing",
+    "view_invoice": "billing",
+}
 
 # Load environment (same as original)
 load_dotenv()
@@ -157,6 +172,26 @@ def download_file(url, fallback_ext=".m4a"):
     debug_print(f"Downloading media from: {url}")
     debug_print(f"Saved media to: {tmp_path}  (Content-Type: {ct}, ext used: {ext})")
     return tmp_path
+
+def dispatch_intent(intent: str, entities: dict, context: dict):
+    """
+    Minimal intent dispatcher.
+    Does nothing unless intent matches a known plugin.
+    """
+
+    if not intent:
+        return None
+
+    # Billing intents
+    if intent in BILLING_INTENT_MAP and billing_handle:
+        return billing_handle(
+            intent=intent,
+            entities=entities or {},
+            context=context or {}
+        )
+
+    return None
+
 
 def download_media_to_local(url, fallback_ext=".m4a"):
     """Download Twilio media (with Basic Auth if needed) to temp file and return local path."""
