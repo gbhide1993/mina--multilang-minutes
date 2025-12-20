@@ -8,6 +8,8 @@ Invoice Creation Workflow (State Machine)
 
 from typing import Dict, Any, Optional
 from db import set_user_state, get_user_state
+from billing_plugin.usage_metrics import increment_metric
+
 
 # -------------------------
 # Constants
@@ -95,12 +97,7 @@ def advance_flow(
             "reason": "invalid_state",
             "state": current,
         }
-    from billing_plugin.usage_metrics import increment_metric
-
-    if current == "CONFIRMATION":
-        if updates.get("confirm") is True:
-            increment_metric(phone, "invoices_created")
-            return _transition(phone, "COMPLETED", meta)    
+     
 
     # Merge updates
     meta.update(updates)
@@ -135,6 +132,7 @@ def advance_flow(
 
     if current == "CONFIRMATION":
         if updates.get("confirm") is True:
+            increment_metric(phone, "invoices_created")  # 👈 ADD THIS
             return _transition(phone, "COMPLETED", meta)
 
         return _stay(current, meta, "await_confirmation")
