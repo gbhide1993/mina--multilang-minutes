@@ -47,6 +47,35 @@ from encryption import encrypt_sensitive_data, decrypt_sensitive_data
 from openai_client_multilang import summarize_text_multilang, transcribe_file_multilang
 import json
 
+# ---- Pending State Helpers ----
+
+def get_pending_state_by_phone(phone):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, pending_state
+            FROM meeting_notes
+            WHERE phone=%s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (phone,)
+        )
+        row = cur.fetchone()
+        if row:
+            return row[0], row[1]
+        return None, None
+
+
+def set_pending_state(meeting_id, state):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE meeting_notes SET pending_state=%s WHERE id=%s",
+            (state, meeting_id)
+        )
+        conn.commit()
+
+
 # --- Optional Billing Plugin ---
 try:
     from billing_plugin import handle as billing_handle
@@ -444,7 +473,32 @@ def twilio_webhook():
                     "By using this service, you consent to audio processing for transcription purposes."
                 ))
                 return ("", 204)
+
+            num_text = body_text.strip()
             
+            meeting_id, pending_state = get_pending_state_by_phone(sender)
+            
+            print(f"🔐 Numeric reply '{num_text}' with pending_state='{pending_state}'")
+
+            # --- CLARIFY INTENT GATE (MUST RUN FIRST) ---
+            if pending_state == "CLARIFY_INTENT":
+                if num_text == "1":
+                    set_pending_state(meeting_id, None)
+                    send_whatsapp(sender, "🧾 Invoice selected. Billing shuru kar rahe hain.")
+                    # TODO: trigger billing plugin / flow here
+                    return ("", 204)
+            
+                elif num_text == "2":
+                    set_pending_state(meeting_id, None)
+                    send_whatsapp(sender, "📋 Reminder selected.")
+                    # TODO: trigger task/reminder flow here
+                    return ("", 204)
+            
+                else:
+                    send_whatsapp(sender, "Please reply with 1 or 2.")
+                    return ("", 204)
+
+
             # Check if user has pending summary job first
             pending_job = _get_pending_summary_job(sender)
             
