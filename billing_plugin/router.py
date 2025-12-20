@@ -1,23 +1,30 @@
-"""
-Billing intent router
-Routes billing intents to billing_plugin without affecting other flows
-"""
+# router.py
 
-from billing_plugin.intents import BILLING_INTENTS
-from billing_plugin.handler import handle as billing_handle
-
-
-def route_billing_intent(intent: str, entities: dict, context: dict):
+def route_intent(intent: str, persona: str | None):
     """
-    Routes billing-related intents to billing_plugin.
+    Decide which handler should process the intent.
 
-    Safe no-op if intent is not billing-related.
+    Returns:
+        'billing'
+        'task'
+        'clarify'
     """
-    if intent not in BILLING_INTENTS:
-        return None
 
-    return billing_handle(
-        intent=intent,
-        entities=entities or {},
-        context=context or {},
-    )
+    persona = persona or "UNKNOWN"
+
+    # Billing intent
+    if intent == "create_invoice":
+        if persona == "SHOPKEEPER":
+            return "billing"
+
+        if persona == "PROFESSIONAL":
+            return "task"
+
+        return "clarify"
+
+    # Default task intent
+    if intent in ("create_task", "add_task"):
+        return "task"
+
+    # Safe fallback
+    return "task"
