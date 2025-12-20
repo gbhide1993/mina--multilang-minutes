@@ -95,6 +95,12 @@ def advance_flow(
             "reason": "invalid_state",
             "state": current,
         }
+    from billing_plugin.usage_metrics import increment_metric
+
+    if current == "CONFIRMATION":
+        if updates.get("confirm") is True:
+            increment_metric(phone, "invoices_created")
+            return _transition(phone, "COMPLETED", meta)    
 
     # Merge updates
     meta.update(updates)
