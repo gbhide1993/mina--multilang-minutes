@@ -402,7 +402,15 @@ def twilio_webhook():
         # Handle numbered button responses (1, 2, 3)
         if body_text and body_text.strip() in ['1', '2', '3']:
             num_text = body_text.strip()
-            # 1) Check DB for a pending durable flow (language selection)
+            meeting_id, pending_state = get_pending_state_by_phone(sender)
+
+            # ⛔ BLOCK summary routing while clarify is active
+            if pending_state == "CLARIFY_INTENT":
+                print("⛔ Numeric reply ignored for summary — clarify intent active")
+                # Do NOT fall through to summary logic
+                return ("", 204)
+          
+# 1) Check DB for a pending durable flow (language selection)
             try:
                 pending_job = _get_pending_summary_job(sender)
             except Exception as e:
@@ -586,7 +594,7 @@ def twilio_webhook():
 
             # Language choice for pending summary
             lang_choice = parse_language_choice(body_text)
-            if lang_choice and pending_job:
+            if lang_choice and pending_job and pending_state != "CLARIFY_INTENT":
                 # Enqueue summary generation job
                 try:
                     meeting_id = pending_job['meeting_id']
