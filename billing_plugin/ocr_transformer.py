@@ -16,6 +16,12 @@ This module:
 import re
 from typing import List, Dict
 
+from billing_plugin.ocr_transformer import extract_line_items
+from billing_plugin.usage_metrics import increment_metric
+
+items = extract_line_items(ocr_text)
+increment_metric(phone, "ocr_imports")
+
 
 COMMON_UNITS = [
     "kg", "kgs", "gm", "g", "ltr", "l", "ml",
