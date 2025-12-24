@@ -405,7 +405,7 @@ def twilio_webhook():
             meeting_id, pending_state = get_pending_state_by_phone(sender)
 
             # ⛔ BLOCK summary routing while clarify is active
-           if pending_state == "CLARIFY_INTENT":
+        if pending_state == "CLARIFY_INTENT":
               if num_text == "1":
                   # User chose Invoice
                   set_pending_state(meeting_id, None)
@@ -430,9 +430,9 @@ def twilio_webhook():
 
                    return ("", 204)
 
-             else:
-                  send_whatsapp(sender, "Please reply with 1 or 2.")
-                  return ("", 204)
+        else:
+            send_whatsapp(sender, "Please reply with 1 or 2.")
+            return ("", 204)
 
           
 # 1) Check DB for a pending durable flow (language selection)
