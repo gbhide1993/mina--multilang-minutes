@@ -29,6 +29,7 @@ from werkzeug.utils import secure_filename
 from smart_followups import get_user_completion_score 
 
 
+
 # Import DB and payments (same as original)
 from db import (init_db, get_conn, get_or_create_user, get_remaining_minutes, deduct_minutes, save_meeting_notes, save_meeting_notes_with_sid, save_user, decrement_minutes_if_available, set_subscription_active)
 from db_multilang import init_multilang_db, set_user_language, get_user_language
@@ -38,14 +39,21 @@ from payments import create_payment_link_for_phone, handle_webhook_event, verify
 from db import set_user_state, get_user_state, update_user_language
 
 # New imports for API endpoints
-from werkzeug.utils import secure_filename
 from db import (
     get_or_create_user, save_meeting_notes_with_sid, get_conn,
     create_task, get_tasks_for_user, get_user_by_phone
 )
 from encryption import encrypt_sensitive_data, decrypt_sensitive_data
 from openai_client_multilang import summarize_text_multilang, transcribe_file_multilang
-import json
+
+if "GOOGLE_APPLICATION_CREDENTIALS_JSON" in os.environ:
+    creds = json.loads(os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"])
+    creds_path = "/tmp/gcs_creds.json"
+    with open(creds_path, "w") as f:
+        json.dump(creds, f)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
+
+from google.cloud import storage
 
 # ---- Pending State Helpers ----
 
@@ -399,436 +407,62 @@ def twilio_webhook():
             handle_image_message(sender, media_url)
             return ("", 204)
         
-        # Handle numbered button responses (1, 2, 3)
-        if body_text and body_text.strip() in ['1', '2', '3']:
-            num_text = body_text.strip()
+
+        # -------------------------
+        # Handle numbered responses (1,2,3) — unified & safe
+        # -------------------------
+        if body_text in ("1", "2", "3"):
+            num_text = body_text
             meeting_id, pending_state = get_pending_state_by_phone(sender)
 
-            # ⛔ BLOCK summary routing while clarify is active
-        if pending_state == "CLARIFY_INTENT":
-              if num_text == "1":
-                  # User chose Invoice
-                  set_pending_state(meeting_id, None)
-
-                  send_whatsapp(
-                      sender,
-                      "🧾 Invoice banana shuru kar rahe hain.\n\n"
-                      "Labour / service charge kitna hai?"
-                  )
-
-                  # TODO (next step): set new state ASK_LABOUR_CHARGE
-                  return ("", 204)
-
-              elif num_text == "2":
-                   # User chose Reminder
-                   set_pending_state(meeting_id, None)
-
-                   send_whatsapp(
-                       sender,
-                       "📋 Reminder set karne ke liye details bhejiye."
-                   )
-
-                   return ("", 204)
-
-        else:
-            send_whatsapp(sender, "Please reply with 1 or 2.")
-            return ("", 204)
-
-          
-# 1) Check DB for a pending durable flow (language selection)
-            try:
-                pending_job = _get_pending_summary_job(sender)
-            except Exception as e:
-                debug_print("Error checking pending job for numeric reply:", e)
-                pending_job = None
-
-            if pending_job:
-                # Interpret numeric reply as a language choice for the pending summary
-                try:
-                    lang_choice = parse_language_choice(num_text)
-                    if not lang_choice:
-                        send_whatsapp(sender, "❌ Invalid choice. Please reply with 1, 2 or 3 from the language menu.")
-                        return ("", 204)
-
-                    meeting_id = pending_job['meeting_id']
-
-                    if queue:
-                        job = queue.enqueue(
-                            "worker_multilang_production_fixed_clean.complete_summary_job",
-                            meeting_id,
-                            lang_choice,
-                            job_timeout=60 * 60
-                        )
-                        if job:
-                            lang_name = get_language_name(lang_choice)
-                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
-                            debug_print(f"Enqueued summary job for meeting {meeting_id} language {lang_choice}")
-                        else:
-                            send_whatsapp(sender, "⚠️ Failed to start processing. Please try again.")
-                    else:
-                        send_whatsapp(sender, "⚠️ Service temporarily unavailable. Please try again later.")
-                except Exception as e:
-                    debug_print("Error handling numeric->language selection:", e, traceback.format_exc())
-                    send_whatsapp(sender, "⚠️ Could not process your selection. Please try again.")
-                return ("", 204)
-
-            # 2) No pending DB job: fallback to ephemeral handler (buttons/ocr/etc)
-            try:
-                from whatsapp_features import handle_numbered_response
-                handled = handle_numbered_response(sender, num_text)
-                if handled:
-                    return ("", 204)
-            except Exception as e:
-                debug_print("whatsapp_features.handle_numbered_response error:", e, traceback.format_exc())
-
-            # 3) Final fallback message
-            send_whatsapp(sender, "❌ No active options. Please try again.")
-            return ("", 204)
-
-        
-        # Handle interactive button responses
-        button_payload = request.values.get("ButtonPayload")
-        if button_payload:
-            from whatsapp_features import handle_button_response
-            handle_button_response(sender, button_payload)
-            return ("", 204)
-        
-        if not media_url:
-            # Show privacy notice for 'privacy' or 'security' requests
-            if body_text.lower() in ['privacy', 'security', 'data', 'terms']:
-                send_whatsapp(sender, (
-                    "Privacy & Security\n\n"
-                    "• Audio files are processed securely via OpenAI\n"
-                    "• Recordings are not stored permanently\n"
-                    "• Transcripts are kept for service delivery only\n"
-                    "• No data is shared with third parties\n"
-                    "• You can request data deletion anytime\n\n"
-                    "By using this service, you consent to audio processing for transcription purposes."
-                ))
-                return ("", 204)
-
-            num_text = body_text.strip()
-            
-            meeting_id, pending_state = get_pending_state_by_phone(sender)
-            
-            print(f"🔐 Numeric reply '{num_text}' with pending_state='{pending_state}'")
-
-            # --- CLARIFY INTENT GATE (MUST RUN FIRST) ---
+            # CLARIFY_INTENT gate
             if pending_state == "CLARIFY_INTENT":
                 if num_text == "1":
                     set_pending_state(meeting_id, None)
-                    send_whatsapp(sender, "🧾 Invoice selected. Billing shuru kar rahe hain.")
-                    # TODO: trigger billing plugin / flow here
+                    send_whatsapp(sender, "🧾 Invoice banana shuru kar rahe hain.\n\nLabour / service charge kitna hai?")
                     return ("", 204)
-            
                 elif num_text == "2":
                     set_pending_state(meeting_id, None)
-                    send_whatsapp(sender, "📋 Reminder selected.")
-                    # TODO: trigger task/reminder flow here
+                    send_whatsapp(sender, "📋 Reminder set karne ke liye details bhejiye.")
                     return ("", 204)
-            
                 else:
                     send_whatsapp(sender, "Please reply with 1 or 2.")
                     return ("", 204)
 
-
-            # Check if user has pending summary job first
+            # Pending summary language selection
             pending_job = _get_pending_summary_job(sender)
-            
-            # Show tasks command with interactive list
-            if body_text.lower() in ['show my tasks', 'show my task', 'tasks', 'task', 'my tasks', 'my task', 'list tasks', 'show tasks', 'show task']:
-                try:
-                    from whatsapp_features import send_morning_briefing_with_list
-                    success = send_morning_briefing_with_list(sender)
-                    if not success:
-                        send_whatsapp(sender, "You don't have any tasks yet. Send a voice note to create tasks!")
-                except Exception as e:
-                    print(f"Error showing tasks: {e}")
-                    send_whatsapp(sender, "❌ Failed to fetch tasks. Please try again.")
-                return ("", 204)
-            
-            # Complete task command with interactive confirmation
-            if body_text.lower().startswith('done '):
-                try:
-                    from advanced_features import parse_task_completion_response
-                    result = parse_task_completion_response(body_text, sender)
-                    if result and result.get('success'):
-                        # Send completion with celebration buttons
-                        from whatsapp_features import send_interactive_buttons
-                        msg = f"🎉 {result.get('message', 'Task completed!')}"
-                        buttons = [
-                            {"id": "show_tasks", "title": "📋 Show Tasks"},
-                            {"id": "add_task", "title": "➕ Add Task"},
-                            {"id": "celebrate", "title": "🎉 Celebrate"}
-                        ]
-                        send_interactive_buttons(sender, msg, buttons)
-                    else:
-                        send_whatsapp(sender, result.get('message', '❌ Task not found') if result else '❌ Invalid format. Use: Done <task_id>')
-                except Exception as e:
-                    print(f"Error completing task: {e}")
-                    send_whatsapp(sender, "❌ Failed to complete task. Please try again.")
-                return ("", 204)
-            
-            # Skip summary option
-            if body_text.lower() in ['skip', 'no summary', 'no', 'cancel']:
-                if pending_job:
-                    try:
-                        meeting_id = pending_job['meeting_id']
-                        with get_conn() as conn, conn.cursor() as cur:
-                            cur.execute("UPDATE meeting_notes SET job_state='skipped' WHERE id=%s", (meeting_id,))
-                            conn.commit()
-                        send_whatsapp(sender, "✅ Summary skipped. Your tasks have been saved!")
-                    except Exception as e:
-                        print(f"Error skipping summary: {e}")
-                    return ("", 204)
-            
-            # Show score command
-            if body_text.lower() in ['score', 'my score', 'show score', 'task score']:
-                try:
-                    
-                    score_data = get_user_completion_score(sender, days=7)
-                    
-                    if not score_data or score_data['total'] == 0:
-                        send_whatsapp(sender, "📊 No tasks yet! Send a voice note to get started.")
-                        return ("", 204)
-                    
-                    score = score_data['score']
-                    completed = score_data['completed']
-                    pending = score_data['pending']
-                    overdue = score_data['overdue']
-                    completion_rate = score_data['completion_rate']
-                    
-                    emoji = "🏆" if score >= 90 else "⭐" if score >= 75 else "👍" if score >= 60 else "📈" if score >= 40 else "💪"
-                    
-                    message = f"""{emoji} *Your Task Score*
-
-                    📊 Score: {score}/100
-
-                    ✅ Completed: {completed}
-                    ⏳ Pending: {pending}
-                    ⚠️ Overdue: {overdue}
-                    📈 Completion Rate: {completion_rate}%
-
-                    _Last 7 days_"""
-                    
-                    send_whatsapp(sender, message)
-                except Exception as e:
-                    print(f"Error showing score: {e}")
-                    send_whatsapp(sender, "❌ Failed to fetch score. Please try again.")
-                return ("", 204)
-
-            # Language choice for pending summary
-            lang_choice = parse_language_choice(body_text)
-            if lang_choice and pending_job and pending_state != "CLARIFY_INTENT":
-                # Enqueue summary generation job
-                try:
-                    meeting_id = pending_job['meeting_id']
-                    
-                    if queue:
-                        job = queue.enqueue(
-                            "worker_multilang_production_fixed_clean.complete_summary_job",
-                            meeting_id,
-                            lang_choice,
-                            job_timeout=60 * 60  # Standard timeout for Render worker
-                        )
-                        if job:
-                            lang_name = get_language_name(lang_choice)
-                            send_whatsapp(sender, f"🔄 Generating summary in {lang_name}...")
-                            debug_print(f"✅ Enqueued summary job for meeting {meeting_id} in {lang_name}")
-                        else:
-                            send_whatsapp(sender, "⚠️ Failed to process request. Please try again.")
-                    else:
-                        send_whatsapp(sender, "⚠️ Service unavailable. Please try again later.")
-                    
-                except Exception as e:
-                    debug_print(f"Error enqueuing summary job: {e}")
-                    send_whatsapp(sender, "⚠️ Failed to generate summary. Please try again.")
-                return ("", 204)
-            
-            # Language menu request
-            if body_text.lower() in ['language', 'lang', 'settings', 'भाषा', 'ভাষা']:
-                if pending_job:
-                    # Show language menu for pending summary
-                    detected_lang = pending_job.get('detected_language', 'en')
-                    detected_name = get_language_name(detected_lang)
-                    menu = get_language_menu()
-                    send_whatsapp(sender, f"🎙️ *Audio transcribed!*\n🔍 Detected: *{detected_name}*\n\n{menu}")
-                else:
-                    # Show regular language menu
-                    menu = get_language_menu()
-                    send_whatsapp(sender, menu)
-                return ("", 204)
-            
-            # Handle subscription commands
-            if body_text.lower() in ['subscribe', 'premium', 'upgrade', 'subscription', '499']:
-                premium_link = "https://rzp.io/rzp/ioFxwdz"
-                send_whatsapp(sender, f"🏆 *Upgrade to Chief of Staff (₹499/month)*\n\n✅ Unlimited voice transcription\n✅ Unlimited image OCR\n✅ Unlimited location tracking\n✅ Priority support\n\n💳 Subscribe now: {premium_link}")
-                return ("", 204)
-            
-            if body_text.lower() in ['basic', 'basic plan', '299']:
-                basic_link = "https://rzp.io/rzp/X6bzLXmD"
-                send_whatsapp(sender, f"💎 *Upgrade to Assistant (₹299/month)*\n\n✅ 90 minutes voice\n✅ 40 OCR scans\n✅ 75 location check-ins\n✅ Priority support\n\n💳 Subscribe now: {basic_link}")
-                return ("", 204)
-            
-            # Set user language preference (when no pending job)
-            if lang_choice and not pending_job:
-                set_user_language(sender, lang_choice)
-                lang_name = get_language_name(lang_choice)
-                send_whatsapp(sender, f"✅ Language set to {lang_name}\n\nNow send a voice message for transcription!")
-                return ("", 204)
-            
-            # Handle pending job vs new user differently
             if pending_job:
-                # User has pending job but sent invalid text - show menu again
-                detected_lang = pending_job.get('detected_language', 'en')
-                detected_name = get_language_name(detected_lang)
-                menu = get_language_menu()
-                send_whatsapp(sender, f"⏳ *Please select a language from the menu:*\n🔍 Detected: *{detected_name}*\n\n{menu}")
-            else:
-                # New user - show guidance with interactive buttons
-                from whatsapp_features import send_interactive_buttons
-                welcome_msg = (
-                    "Hi! I'm MinA, your AI assistant! 🤖\n\n"
-                    "🎙️ Send voice notes for meeting minutes\n"
-                    "📍 Share location for check-ins\n"
-                    "📇 Forward contacts to save them\n"
-                    "📸 Send images for text extraction\n\n"
-                    "What would you like to do?"
-                )
-                buttons = [
-                    {"id": "help_voice", "title": "🎙️ Voice Help"},
-                    {"id": "help_tasks", "title": "📋 Task Help"},
-                    {"id": "help_features", "title": "✨ All Features"}
-                ]
-                send_interactive_buttons(sender, welcome_msg, buttons)
-            return ("", 204)
+                lang_choice = parse_language_choice(num_text)
+                if not lang_choice:
+                    send_whatsapp(sender, "❌ Invalid choice. Reply 1, 2 or 3.")
+                    return ("", 204)
 
-        # Download media to local file
-        local_path = download_media_to_local(media_url)
-        if not local_path:
-            send_whatsapp(sender, "⚠️ Failed to download audio. Please try again.")
-            return ("", 204)
-
-        # Compute duration using mutagen
-        duration_seconds = get_audio_duration_seconds(local_path)
-        minutes = round(duration_seconds / 60.0, 2)
-
-        # Atomic reservation: lock user row, check credits/subscription, deduct and insert meeting row
-        with get_conn() as conn, conn.cursor() as cur:
-            phone = sender
-            # Lock user row to avoid race conditions
-            cur.execute("SELECT credits_remaining, subscription_active, subscription_expiry FROM users WHERE phone=%s FOR UPDATE", (phone,))
-            row = cur.fetchone()
-            if row:
-                credits_remaining = float(row[0]) if row[0] is not None else 0.0
-                sub_active = bool(row[1])
-                sub_expiry = row[2]
-            else:
-                # Create user if missing
-                cur.execute("""
-                    INSERT INTO users (phone, credits_remaining, subscription_active, created_at)
-                    VALUES (%s, %s, %s, now())
-                    RETURNING credits_remaining, subscription_active, subscription_expiry
-                """, (phone, 30.0, False))
-                newr = cur.fetchone()
-                if newr is None:
-                    credits_remaining = 30.0
-                    sub_active = False
-                    sub_expiry = None
+                if queue:
+                    queue.enqueue(
+                        "worker_multilang_production_fixed_clean.complete_summary_job",
+                        pending_job["meeting_id"],
+                        lang_choice,
+                        job_timeout=3600
+                    )
+                    send_whatsapp(sender, f"🔄 Generating summary in {get_language_name(lang_choice)}...")
                 else:
-                    if hasattr(newr, "get"):
-                        credits_remaining = float(newr.get("credits_remaining") or 0.0)
-                        sub_active = bool(newr.get("subscription_active") or False)
-                        sub_expiry = newr.get("subscription_expiry")
-                    else:
-                        credits_remaining = float(newr[0] or 0.0)
-                        sub_active = bool(newr[1])
-                        sub_expiry = newr[2]
-
-            # Check subscription status
-            from datetime import datetime as dt, timezone
-            now = dt.now(timezone.utc)
-            if sub_active and (sub_expiry is None or sub_expiry > now):
-                to_deduct = 0.0
-            else:
-                to_deduct = minutes
-
-            if to_deduct > 0 and credits_remaining < to_deduct:
-                # Not enough credits: send subscription link
-                conn.rollback()
-                try:
-                    premium_url = "https://rzp.io/rzp/ioFxwdz"
-                    basic_url = "https://rzp.io/rzp/X6bzLXmD"
-                    send_whatsapp(phone, (
-                        "⚠️ You don't have enough free minutes to transcribe this audio.\n\n"
-                        "💎 Assistant (₹299/month): " + basic_url + "\n"
-                        "🏆 Chief of Staff (₹499/month): " + premium_url + "\n\n"
-                        "Choose your plan for unlimited access!"
-                    ))
-                except Exception as e:
-                    debug_print("Failed to send payment link:", e)
-                    send_whatsapp(phone, "⚠️ You have insufficient free minutes. Please subscribe to continue.")
+                    send_whatsapp(sender, "⚠️ Service temporarily unavailable.")
                 return ("", 204)
 
-            # Insert meeting row with message_sid = dedupe_key
-            cur.execute("""
-                INSERT INTO meeting_notes (phone, audio_file, transcript, summary, message_sid, created_at)
-                VALUES (%s, %s, %s, %s, %s, now())
-                RETURNING id
-            """, (phone, media_url, None, None, dedupe_key))
-            new_row = cur.fetchone()
-            if not new_row:
-                conn.rollback()
-                raise RuntimeError("Failed to insert meeting_notes row")
-            if hasattr(new_row, "get"):
-                meeting_id = new_row.get("id")
-            else:
-                meeting_id = new_row[0]
-            if meeting_id is None:
-                conn.rollback()
-                raise RuntimeError("Failed to read meeting id after insert")
-            conn.commit()
-
-        # Cleanup local file
-        try:
-            if local_path and os.path.exists(local_path):
-                os.remove(local_path)
-        except Exception as e:
-            debug_print(f"Failed to cleanup temp file {local_path}:", e)
-
-        # Enqueue job using correct worker function with Redis fallback
-        try:
-            if queue:
-                from redis_fallback import safe_enqueue
-                job = safe_enqueue(
-                    queue,
-                    "worker_multilang_production_fixed_clean.process_audio_job",
-                    meeting_id,
-                    media_url,
-                    job_timeout=60 * 60,
-                    result_ttl=60 * 60
-                )
-                if job:
-                    debug_print(f"✅ Successfully enqueued job {job.id} for meeting_id={meeting_id}")
-                    send_whatsapp(phone, "🎙️ Processing your audio... I'll transcribe it first!")
-                else:
-                    # Redis is read-only, inform user
-                    send_whatsapp(phone, "⚠️ Service temporarily unavailable due to maintenance. Please try again in a few minutes.")
-            else:
-                raise Exception("Queue not initialized")
-        except Exception as e:
-            debug_print("❌ Failed to enqueue job:", e)
+            # Fallback numeric handler
             try:
-                send_whatsapp(phone, "⚠️ We couldn't start processing your audio. Please try again in a few minutes.")
-            except Exception:
-                pass
+                from whatsapp_features import handle_numbered_response
+                if handle_numbered_response(sender, num_text):
+                    return ("", 204)
+            except Exception as e:
+                debug_print("handle_numbered_response error:", e, traceback.format_exc())
 
-        return ("", 204)
+            send_whatsapp(sender, "❌ No active options. Please try again.")
+            return ("", 204)
 
     except Exception as e:
-        print("ERROR processing twilio webhook:", e, traceback.format_exc())
-        return ("", 204)
-
+            debug_print("twilio_webhook error:", e, traceback.format_exc())
+            return ("", 204)
 
 @app.route("/razorpay-webhook", methods=["POST"])
 def razorpay_webhook():
@@ -1048,14 +682,7 @@ def test_worker():
             "redis_connected": queue.connection.ping(),
             "message": "Check worker logs for 'TEST WORKER JOB EXECUTED' message"
         }), 200
-        return jsonify({
-            "status": "job_enqueued",
-            "job_id": job.id,
-            "queue_name": queue.name,
-            "queue_length": len(queue),
-            "redis_connected": queue.connection.ping(),
-            "message": "Check worker logs for 'TEST MULTILANG WORKER JOB EXECUTED' message"
-        }), 200
+       
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1520,13 +1147,6 @@ def api_history():
         return jsonify({"error": str(e)}), 500
 
 
-if __name__ == "__main__":
-    flask_debug = str(os.getenv("FLASK_DEBUG", "0")).lower() in ("1", "true", "yes")
-    debug_print("Starting Flask multilang app (FLASK_DEBUG=%s) on port %s" % (flask_debug, os.getenv("PORT", "5000")))
-    if TEST_MODE:
-        app.run(host="0.0.0.0", port=5000, debug=True)
-    else:
-        app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=flask_debug)
 
 
 # ===== NEW FEATURES: Voice Tasks & Scheduled Reminders =====
@@ -1784,3 +1404,11 @@ def shipping():
 @app.route('/contact.html')
 def contact():
     return render_template('contact.html')
+
+if __name__ == "__main__":
+    flask_debug = str(os.getenv("FLASK_DEBUG", "0")).lower() in ("1", "true", "yes")
+    debug_print("Starting Flask multilang app (FLASK_DEBUG=%s) on port %s" % (flask_debug, os.getenv("PORT", "5000")))
+    if TEST_MODE:
+        app.run(host="0.0.0.0", port=5000, debug=True)
+    else:
+        app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)), debug=flask_debug)
