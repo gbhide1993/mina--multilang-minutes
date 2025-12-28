@@ -15,5 +15,7 @@ apscheduler
 python-dateutil
 Pillow
 pytesseract
+google-cloud-storage
+
 
 
