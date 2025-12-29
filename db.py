@@ -77,6 +77,65 @@ def fetchone_normalized(cur):
     cols = [d.name for d in cur.description]  # psycopg2 cursor.description objects have .name
     return dict(zip(cols, row))
 
+def create_transcription_job(job_id, phone, gcs_path):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO transcription_jobs (id, phone, gcs_path, status)
+            VALUES (%s, %s, %s, 'PENDING')
+        """, (job_id, phone, gcs_path))
+        conn.commit()
+
+def get_transcription_job(job_id):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            SELECT id, phone, gcs_path, status
+            FROM transcription_jobs
+            WHERE id = %s
+        """, (job_id,))
+        row = cur.fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "phone": row[1],
+        "gcs_path": row[2],
+        "status": row[3]
+    }
+
+
+
+def mark_job_processing(job_id):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            UPDATE transcription_jobs
+            SET status='PROCESSING', updated_at=NOW()
+            WHERE id=%s
+        """, (job_id,))
+        conn.commit()
+
+def mark_job_done(job_id):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            UPDATE transcription_jobs
+            SET status='DONE', updated_at=NOW()
+            WHERE id=%s
+        """, (job_id,))
+        conn.commit()
+
+
+def mark_job_failed(job_id, error):
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("""
+            UPDATE transcription_jobs
+            SET status='FAILED', error=%s, updated_at=NOW()
+            WHERE id=%s
+        """, (error, job_id))
+        conn.commit()
+
+
+
 def init_db():
     """Create tables and helpful indexes if they don't exist."""
     with get_conn() as conn, conn.cursor() as cur:
