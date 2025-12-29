@@ -441,12 +441,26 @@ def twilio_webhook():
                 debug_print(f"Audio uploaded to GCS: {gcs_path}")
 
                 # Pass GCS path to your existing flow
-                handle_audio_from_gcs(
-                    sender=sender,
-                    gcs_path=gcs_path
-                )
+                from db import create_transcription_job
+
+                job_id = create_transcription_job(
+                        phone=sender,
+                        gcs_path=gcs_path
+                    )
+
+                queue.enqueue(
+                        "worker.transcribe_audio",
+                        job_id,
+                        job_timeout=900
+                    )
+
+                send_whatsapp(
+                        sender,
+                        "🎤 Audio mil gaya. Likh ke bhej raha hoon…"
+                    )
 
                 return ("", 204)
+
 
             except Exception as e:
                 debug_print("Audio handling failed:", e, traceback.format_exc())
