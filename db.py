@@ -546,6 +546,37 @@ def record_payment(phone, razorpay_payment_id, amount, currency="INR", status="c
         return row[0], row[1]
 
 
+def fetch_next_pending_job():
+    """
+    Fetch exactly one pending transcription job and lock it.
+    Returns dict or None.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT id, phone, gcs_path
+                FROM transcription_jobs
+                WHERE status = 'PENDING'
+                ORDER BY created_at
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            """)
+            row = cur.fetchone()
+
+            if not row:
+                return None
+
+            job = {
+                "id": row[0],
+                "phone": row[1],
+                "gcs_path": row[2],
+            }
+
+            return job
+
+    mark_job_processing(job["id"])
+
+
 def save_meeting_notes(phone, audio_file, transcript, summary):
     """
     Store the meeting transcription + summary for a user.
