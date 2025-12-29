@@ -161,6 +161,22 @@ except Exception as e:
     queue = None
     redis_url = None
 
+def handle_audio_from_gcs(sender, gcs_path):
+    """
+    Temporary handler: confirms upload and stores metadata.
+    Replace with transcription logic later.
+    """
+    debug_print(f"handle_audio_from_gcs called for {sender}")
+    debug_print(f"GCS audio path: {gcs_path}")
+
+    # TODO: enqueue transcription / processing job here
+
+    send_whatsapp(
+        sender,
+        "🎤 Audio received. Processing has started."
+    )
+
+
 # Utility functions (same as original)
 def debug_print(*args, **kwargs):
     """Simple wrapper for prints so we can change later to logging."""
