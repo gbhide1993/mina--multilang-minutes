@@ -401,12 +401,47 @@ def twilio_webhook():
             handle_location_message(sender, float(latitude), float(longitude), address)
             return ("", 204)
         
+        media_type = request.values.get("MediaContentType0") or ""
+
+
         # Handle image messages
-        if media_url and "image" in (request.values.get("MediaContentType0") or ""):
+        if media_url and media_type.startswith("image/"):
             from whatsapp_features import handle_image_message
             handle_image_message(sender, media_url)
             return ("", 204)
-        
+
+        # Handle audio messages (WhatsApp voice notes)
+        if media_url and (
+            media_type.startswith("audio/")
+            or media_type in ("video/ogg", "application/ogg")
+        ):
+            try:
+                gcs_path = upload_twilio_media_to_gcs(
+                    media_url=media_url,
+                    content_type=media_type,
+                    phone=sender
+                )
+
+                debug_print(f"Audio uploaded to GCS: {gcs_path}")
+
+                # Pass GCS path to your existing flow
+                handle_audio_from_gcs(
+                    sender=sender,
+                    gcs_path=gcs_path
+                )
+
+                return ("", 204)
+
+            except Exception as e:
+                debug_print("Audio handling failed:", e, traceback.format_exc())
+                send_whatsapp(
+                    sender,
+                    "❌ Audio process karne mein problem aayi. Please try again."
+                )
+                return ("", 204)
+
+
+
 
         # -------------------------
         # Handle numbered responses (1,2,3) — unified & safe
@@ -464,6 +499,10 @@ def twilio_webhook():
             debug_print("twilio_webhook error:", e, traceback.format_exc())
             return ("", 204)
 
+
+
+
+
 @app.route("/razorpay-webhook", methods=["POST"])
 def razorpay_webhook():
     """Razorpay webhook endpoint (production-safe)"""
@@ -505,6 +544,36 @@ def razorpay_webhook():
         debug_print("Error handling Razorpay webhook:", e, traceback.format_exc())
         return ("Internal error", 500)
 
+
+def upload_twilio_media_to_gcs(media_url, content_type, phone=None):
+    """
+    Downloads media from Twilio and uploads to GCS.
+    Returns gs:// path
+    """
+    bucket_name = os.environ["GCS_BUCKET"]
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    user_segment = phone.replace(":", "").replace("+", "") if phone else "anonymous"
+    timestamp = int(time.time())
+    ext = mimetypes.guess_extension(content_type) or ".bin"
+
+    object_name = f"uploads/{user_segment}/{timestamp}{ext}"
+    blob = bucket.blob(object_name)
+
+    # Twilio media requires auth
+    auth = (os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+
+    r = requests.get(media_url, auth=auth, stream=True, timeout=30)
+    r.raise_for_status()
+
+    blob.upload_from_file(
+        r.raw,
+        content_type=content_type,
+        rewind=True
+    )
+
+    return f"gs://{bucket_name}/{object_name}"
 
 @app.route("/admin/user/<path:phone>", methods=["GET"])
 def admin_get_user(phone):
