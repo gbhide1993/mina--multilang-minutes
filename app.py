@@ -546,34 +546,34 @@ def razorpay_webhook():
 
 
 def upload_twilio_media_to_gcs(media_url, content_type, phone=None):
-    """
-    Downloads media from Twilio and uploads to GCS.
-    Returns gs:// path
-    """
     bucket_name = os.environ["GCS_BUCKET"]
     client = storage.Client()
     bucket = client.bucket(bucket_name)
 
     user_segment = phone.replace(":", "").replace("+", "") if phone else "anonymous"
     timestamp = int(time.time())
-    ext = mimetypes.guess_extension(content_type) or ".bin"
+    ext = mimetypes.guess_extension(content_type) or ".ogg"
 
     object_name = f"uploads/{user_segment}/{timestamp}{ext}"
     blob = bucket.blob(object_name)
 
     # Twilio media requires auth
-    auth = (os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+    auth = (
+        os.environ["TWILIO_ACCOUNT_SID"],
+        os.environ["TWILIO_AUTH_TOKEN"]
+    )
 
-    r = requests.get(media_url, auth=auth, stream=True, timeout=30)
+    r = requests.get(media_url, auth=auth, timeout=30)
     r.raise_for_status()
 
-    blob.upload_from_file(
-        r.raw,
-        content_type=content_type,
-        rewind=True
+    # ✅ Upload bytes, not stream
+    blob.upload_from_string(
+        r.content,
+        content_type=content_type
     )
 
     return f"gs://{bucket_name}/{object_name}"
+
 
 @app.route("/admin/user/<path:phone>", methods=["GET"])
 def admin_get_user(phone):
