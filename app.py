@@ -448,11 +448,7 @@ def twilio_webhook():
                         gcs_path=gcs_path
                     )
 
-                queue.enqueue(
-                        "worker.transcribe_audio",
-                        job_id,
-                        job_timeout=900
-                    )
+                
 
                 send_whatsapp(
                         sender,
