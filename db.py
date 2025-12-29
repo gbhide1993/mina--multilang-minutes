@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from contextlib import contextmanager
 import os
 import json
+import uuid 
 
 # Use DATABASE_URL from environment or default to local SQLite
 DB_URL = os.getenv("DATABASE_URL")
@@ -77,13 +78,20 @@ def fetchone_normalized(cur):
     cols = [d.name for d in cur.description]  # psycopg2 cursor.description objects have .name
     return dict(zip(cols, row))
 
-def create_transcription_job(job_id, phone, gcs_path):
+
+
+def create_transcription_job(phone, gcs_path):
+    job_id = str(uuid.uuid4())
+
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("""
             INSERT INTO transcription_jobs (id, phone, gcs_path, status)
             VALUES (%s, %s, %s, 'PENDING')
         """, (job_id, phone, gcs_path))
         conn.commit()
+
+    return job_id
+
 
 def get_transcription_job(job_id):
     with get_conn() as conn, conn.cursor() as cur:
